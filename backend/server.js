@@ -191,7 +191,10 @@ app.get("/api/stream", (req, res) => {
 // vào chính tiến trình backend và expose nó qua MQTT-over-WebSocket (/mqtt).
 // -> ESP32 (Wokwi) và App (React Native) cùng dùng broker này, CÓ user/pass
 //    và ACL phân quyền theo topic (đúng tiêu chí "Bảo mật và phân quyền").
-const EMBED_BROKER = process.env.EMBED_BROKER === "true";
+// Mặc định BẬT broker nội bộ (trừ khi người dùng chủ động tắt bằng
+// EMBED_BROKER=false). Nhờ vậy, chỉ cần deploy là hệ thống có sẵn broker
+// MQTT có xác thực + ACL, không phụ thuộc biến môi trường của hosting.
+const EMBED_BROKER = process.env.EMBED_BROKER !== "false";
 const EMBED_TCP_PORT = parseInt(process.env.EMBED_BROKER_PORT || "1883", 10);
 const EMBED_WS_PORT = parseInt(process.env.EMBED_BROKER_WS_PORT || "9001", 10);
 
