@@ -1,12 +1,11 @@
-// LAB1 - Smart Parking firmware ESP32 (ban Wokwi LCD I2C)
-// Thu vien Wokwi: PubSubClient, ArduinoJson, ESP32Servo, MFRC522, LiquidCrystal I2C
+// LAB1 - Smart Parking firmware ESP32 (ban LCD song song cho len chu)
+// Thu vien Wokwi: PubSubClient, ArduinoJson, ESP32Servo, MFRC522, LiquidCrystal
 
 #include <WiFi.h>
-#include <Wire.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <ESP32Servo.h>
-#include <LiquidCrystal_I2C.h>
+#include <LiquidCrystal.h>
 #include <SPI.h>
 #include <MFRC522.h>
 
@@ -26,7 +25,7 @@ const int BUZZER_PIN = 2;
 WiFiClient espClient;
 PubSubClient mqtt(espClient);
 Servo barrier;
-LiquidCrystal_I2C lcd(0x27, 16, 2);
+LiquidCrystal lcd(21,22,16,17,32,33);
 MFRC522 rfid(RFID_SS, RFID_RST);
 
 struct Slot { bool occupied=false; String reservedBy=""; unsigned long reserveAt=0; unsigned long enterAt=0; };
@@ -95,13 +94,14 @@ void onMsg(char* topic,byte* p,unsigned len){
 }
 void setup(){
   Serial.begin(115200);
+  Serial.println("TEST LCD SONG SONG FULL");
   for(int i=0;i<NUM_SLOTS;i++) pinMode(IR_PIN[i],INPUT_PULLUP);
   pinMode(BUZZER_PIN,OUTPUT);
   barrier.attach(SERVO_PIN); barrier.write(0);
-  Wire.begin(21, 22);
-  lcd.init(); lcd.backlight();
+  lcd.begin(16,2);
   lcd.clear(); lcd.setCursor(0,0); lcd.print("Smart Parking");
-  lcd.setCursor(0,1); lcd.print("WiFi...");
+  lcd.setCursor(0,1); lcd.print("Trong:6/6 CLOSED");
+  Serial.println("LCD DA GHI CHU");
   SPI.begin(18,19,23,5); rfid.PCD_Init();
   WiFi.begin(WIFI_SSID,WIFI_PASS);
   Serial.print("WiFi"); int t=0; while(WiFi.status()!=WL_CONNECTED&&t<50){ delay(400); Serial.print("."); t++; }
