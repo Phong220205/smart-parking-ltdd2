@@ -41,19 +41,10 @@ void beep(int n=2){ for(int i=0;i<n;i++){ digitalWrite(BUZZER_PIN,HIGH); delay(1
 void lcdSetup(){
   Wire.begin(21, 22);
   delay(200);
-  // tu dong tim dia chi LCD 0x27 / 0x3F
-  byte addr = 0x27;
-  Wire.beginTransmission(0x27);
-  if(Wire.endTransmission()!=0){
-    Wire.beginTransmission(0x3F);
-    if(Wire.endTransmission()==0) addr = 0x3F;
-  }
-  // khoi tao lai dung dia chi tim duoc
-  lcd = LiquidCrystal_I2C(addr, 16, 2);
   lcd.init();
   lcd.backlight();
   lcd.clear();
-  Serial.print("LCD addr: 0x"); Serial.println(addr, HEX);
+  Serial.println("LCD addr: 0x27 fix cung");
 }
 
 void drawLCD(String extra=""){
