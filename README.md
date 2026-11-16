@@ -94,6 +94,7 @@ DEMO            # bật/tắt chế độ xe tự ra vào
 | Method | Endpoint | Công dụng |
 |---|---|---|
 | GET | `/api/health` | Kiểm tra Backend + MQTT |
+| GET | `/api/health/deep` | Sức khỏe hệ thống: uptime, số liệu, bộ nhớ, counters |
 | GET | `/api/status` | Sơ đồ realtime (6 ô + gate + doanh thu) |
 | GET | `/api/slots` | Trạng thái từng ô |
 | GET | `/api/stats` | Thống kê doanh thu 7 ngày, theo giờ, top user |
@@ -114,6 +115,60 @@ DEMO            # bật/tắt chế độ xe tự ra vào
 
 Dữ liệu lưu ở `data/parking.json` (tự tạo, không cần database).
 
+### Bảo mật & độ bền của REST API
+| Cơ chế | Chi tiết |
+|---|---|
+| **JWT token** | Ký HMAC-SHA256, hạn 7 ngày, gửi qua `Authorization: Bearer <token>` |
+| **Hash mật khẩu** | SHA-256, không lưu bản rõ |
+| **Rate limit** | 120 request/phút mỗi IP (sliding window) → trả `429` khi vượt |
+| **Validate input** | Mã ô chỉ `P1..P6`, `action` chỉ trong allowlist, tên đăng nhập 3–32 ký tự, chống ký tự `<>` |
+| **404 / 500 JSON** | Mọi lỗi trả về JSON chuẩn `{ok:false, error}` |
+| **Request log** | Ghi log mọi request kèm status + thời gian xử lý |
+
+## 4.1 Kiểm thử tự động (Automated E2E Test Suite)
+
+```powershell
+python simulator/test_suite.py
+```
+
+Bộ test chạy **36 checkpoint** end-to-end xuyên suốt Broker → Simulator → Backend → Dashboard:
+
+```
+KET QUA: 36/36 PASS
+```
+
+- Tự bật/tắt simulator ở chế độ `quiet` (tự thu hồi tiến trình khi kết thúc).
+- Tự sinh tài khoản thử nghiệm không trùng lặp → chạy lại nhiều lần vẫn PASS.
+- Bao phủ: hạ tầng · chống trùng đặt chỗ · vòng đời xe · tính phí · barrier ·
+  thống kê · xác thực 401 · validate input · lịch sử · Dashboard 5 tab · SSE.
+
+**CI tự động trên GitHub Actions** (`.github/workflows/ci.yml`): mỗi lần push sẽ
+tự dựng Mosquitto + Backend + chạy đủ 36 checkpoint, đồng thời kiểm tra syntax
+firmware, backend và bundle JSX của App React Native.
+
+### Bảo mật & vận hành
+- **Xác thực**: token ký HMAC-SHA256, header `Authorization: Bearer <token>`, hạn 7 ngày.
+- **Mật khẩu**: lưu dạng hash SHA-256, không lưu bản rõ.
+- **Rate limit**: 120 request / phút / IP → trả `429 Too Many Requests`.
+- **Validate input**: mã ô phải khớp `P1..P6`, `action` phải thuộc danh sách cho phép,
+  username chỉ gồm chữ/số/`_.-`, tên & biển số được lọc ký tự và cắt ngắn.
+- **404 JSON** cho mọi endpoint `/api` không tồn tại, **500 JSON** khi lỗi server.
+
+## 4.1 Kiểm thử tự động & CI
+
+```powershell
+# Chạy toàn bộ 36 checkpoint end-to-end (tự bật/tắt simulator)
+python simulator/test_suite.py
+# → KET QUA: 36/36 PASS
+```
+
+Repo có sẵn **GitHub Actions** (`.github/workflows/ci.yml`) tự động:
+1. Kiểm tra syntax firmware, backend, JSX của app.
+2. Dựng Mosquitto + Backend → chạy `test_suite.py` → 36/36 PASS.
+3. Đóng gói log backend làm artifact.
+
+Mỗi lần `git push` lên `master` → CI tự chạy, có huy hiệu xanh trên trang repo.
+
 ## 5. Giả lập thay phần cứng (để nộp Lab1)
 
 - `esp32/parking_firmware.ino` : code thật, nạp là chạy. **Màn hình OLED SSD1306 128x64** (I2C SDA=D21, SCL=D22).
@@ -130,9 +185,10 @@ esp32/       firmware ESP32 + diagram.json + libraries.txt (Wokwi)
 broker/      Mosquitto Docker (1883 + 9001) + ACL phân quyền
 backend/     Node/Express REST + SSE + Web Dashboard (public/index.html)
 app/         React Native Expo – 4 tab: Bãi / Lịch sử / Thống kê / Tài khoản
-simulator/   Python giả lập ESP32
+simulator/   Python giả lập ESP32 + bộ kiểm thử tự động (test_suite.py)
 docs/        Báo cáo, slide, kịch bản quay video, kết quả test
 data/        parking.json (dữ liệu backend, tự sinh – không commit)
+.github/     CI: tự động kiểm thử 36 checkpoint mỗi lần push
 ```
 
 ## 7. Link nộp (điền theo Phiếu chấm – mục I)

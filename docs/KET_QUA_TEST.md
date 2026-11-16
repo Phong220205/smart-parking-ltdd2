@@ -150,7 +150,7 @@ RFID: --
 - **Nguyên nhân**: hàm `b64url(buf)` gọi `buf.toString("base64url")` trên **String** (chưa encode Buffer) → token sai.
 - **Sửa**: `b64url(buf) { return Buffer.from(buf).toString("base64url"); }`.
 
-## 11. Bộ kiểm thử tự động (Automated E2E Test Suite) – 32/32 PASS
+## 11. Bộ kiểm thử tự động (Automated E2E Test Suite) – 36/36 PASS
 
 Tạo file `simulator/test_suite.py` chạy **end-to-end** toàn bộ pipeline
 (Broker → Simulator → Backend → Dashboard → App API) với **32 checkpoint**:
@@ -191,13 +191,17 @@ python simulator/test_suite.py
 [PASS] Log RFID
 [PASS] Log su kien
 [PASS] Danh sach nguoi dung
+[PASS] Health deep tra chi tiet he thong  -- uptime=82s
+[PASS] Endpoint la tra 404 JSON  -- status=404
+[PASS] Validate ma o sai -> 400  -- 400
+[PASS] Validate action sai -> 400  -- 400
 [PASS] Dashboard HTML phuc vu  -- 16913 bytes
 [PASS] Dashboard co 5 tab
 [PASS] Dashboard co Chart.js
 [PASS] Dashboard co SSE
 [PASS] SSE /api/stream tra du lieu  -- event: hello
 ====================================================================
- KET QUA: 32/32 PASS
+ KET QUA: 36/36 PASS
 ====================================================================
 ```
 
@@ -219,7 +223,32 @@ python simulator/test_suite.py
   và server giữ kết nối mở → `read()` chờ mãi.
 - **Sửa**: dùng `readline()` 2 dòng (`event:` + `data:`) → trả về ngay.
 
-## 12. Tình trạng cuối cùng
+### Bug 7 – Test 404 không nhận được mã trạng thái (đã sửa)
+- **Hiện tượng**: checkpoint "Endpoint la tra 404 JSON" FAIL dù server trả đúng 404.
+- **Nguyên nhân**: hàm `get()` trong test chỉ bắt `Exception` chung → mất `HTTPError`,
+  nên không đọc được `e.code`.
+- **Sửa**: bắt riêng `urllib.error.HTTPError` và parse body kèm `__status`.
+
+## 12. Nâng cấp chất lượng dịch vụ (bổ sung)
+
+| Cơ chế | Mô tả |
+|---|---|
+| **Rate limit** | 120 request/phút mỗi IP (sliding window trong RAM) → trả `429 Too Many Requests` kèm header `Retry-After` |
+| **Validate input** | Mã ô chỉ nhận `P1..P6`; `action` chỉ trong allowlist `reserve/cancel/enter/exit/stay`; tên đăng nhập 3–32 ký tự; lọc ký tự `<>` khỏi mọi chuỗi |
+| **404 / 500 JSON** | Mọi lỗi trả `{ok:false, error}` thay vì HTML mặc định của Express |
+| **Request logger** | Log `METHOD URL -> status (ms)`, bỏ qua `/api/health` và `/api/stream` để tránh nhiễu |
+| **`GET /api/health/deep`** | Trả uptime, phiên bản Node, trạng thái MQTT, số liệu từng bảng dữ liệu, heap, counters |
+
+## 13. CI tự động (GitHub Actions)
+
+File `.github/workflows/ci.yml`:
+- Job `test`: dựng Mosquitto service → `npm ci` → kiểm tra syntax firmware (`.ino`) →
+  `node --check server.js` → bật Backend → chạy đủ **36 checkpoint** → upload log backend khi lỗi.
+- Job `build-app`: `npm ci` trong `app/` → parse JSX bằng `@babel/parser` cho `App.js`, `api.js`, `parkingMqtt.js`.
+
+Chạy tự động mỗi lần push lên `master` → badge CI trong README là bằng chứng code chất lượng.
+
+## 14. Tình trạng cuối cùng
 
 | Hạng mục | Trạng thái |
 |---|---|
@@ -230,9 +259,10 @@ python simulator/test_suite.py
 | Web Dashboard 5 tab | ✅ biểu đồ + 3 bảng lịch sử + quản lý user |
 | App React Native 4 tab | ✅ cú pháp JSX sạch (`@babel/parser`), sẵn sàng chạy Expo Go |
 | Báo cáo + slide | ✅ `.docx` 44 KB, `.pptx` 43 KB (13 slide), sinh tự động từ markdown |
-| **Bộ test tự động** | ✅ `simulator/test_suite.py` — **32/32 PASS** |
+| **Bộ test tự động** | ✅ `simulator/test_suite.py` — **36/36 PASS** |
+| **CI GitHub Actions** | ✅ `.github/workflows/ci.yml` — 2 job (test E2E + app syntax) |
 
-## 13. Việc còn lại (cần làm tay)
+## 15. Việc còn lại (cần làm tay)
 
 1. `cd app && npm install && npx expo start` → quét QR bằng Expo Go, chỉnh IP broker trong tab Cài đặt.
 2. Deploy `backend/` lên Render (theo `backend/DEPLOY.md`) → lấy link server cloud lâu dài.

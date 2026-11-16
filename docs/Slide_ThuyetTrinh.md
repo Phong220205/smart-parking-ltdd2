@@ -74,9 +74,11 @@ ESP32 (thật/Wokwi)  ──MQTT 1883──▶  Mosquitto Broker  ──WS 9001�
 - *Gợi ý hình: ảnh `docker compose ps` + log `CONNECT / PUBLISH`.*
 
 ### Slide 8 – Server & Web Dashboard (nâng cấp)
-- **Backend Node/Express**: 18 endpoint REST + **SSE realtime** (`/api/stream`).
+- **Backend Node/Express**: 19 endpoint REST + **SSE realtime** (`/api/stream`).
 - Lưu trữ bền vững `data/parking.json` – không cần database.
 - **JWT token** ký HMAC-SHA256, mật khẩu hash SHA-256.
+- **Bảo mật API**: rate limit 120 req/phút/IP → 429 · validate input (mã ô `P1..P6`, allowlist action) → 400 · 404/500 JSON chuẩn · log request kèm thời gian xử lý.
+- **Chẩn đoán**: `GET /api/health/deep` → uptime, MQTT, số liệu, bộ nhớ.
 - **Dashboard 5 tab**: Sơ đồ bãi · Thống kê (Chart.js) · Lịch sử · Người dùng · Cài đặt.
 - *Gợi ý hình: ảnh Dashboard tab Thống kê (biểu đồ cột + đường + tròn).*
 
@@ -94,8 +96,8 @@ ESP32 (thật/Wokwi)  ──MQTT 1883──▶  Mosquitto Broker  ──WS 9001�
 - **Barrier tự đóng sau 5 giây**.
 - *Gợi ý hình: sơ đồ luồng booking.*
 
-### Slide 11 – Kiểm thử tự động (32/32 PASS)
-- **Bộ test end-to-end 1 lệnh**: `python simulator/test_suite.py` → `KET QUA: 32/32 PASS`.
+### Slide 11 – Kiểm thử tự động (36/36 PASS)
+- **Bộ test end-to-end 1 lệnh**: `python simulator/test_suite.py` → `KET QUA: 36/36 PASS`.
 - Tự bật/tắt simulator `quiet`, tự sinh tài khoản thử nghiệm không trùng lặp.
 | Nhóm | Checkpoint | KQ |
 |---|---|---|
@@ -105,8 +107,10 @@ ESP32 (thật/Wokwi)  ──MQTT 1883──▶  Mosquitto Broker  ──WS 9001�
 | Barrier | `POST /api/gate OPEN` → `gate=OPEN` | ✅ |
 | Thống kê | Doanh thu 7 ngày · 24 mốc giờ · top user | ✅ |
 | Xác thực | Đăng ký/đăng nhập · nạp tiền · **sai mật khẩu → 401** | ✅ |
+| Dịch vụ | `health/deep` · 404 JSON · **validate sai → 400** | ✅ |
 | Dashboard | HTML · 5 tab · Chart.js · **SSE realtime** | ✅ |
 
+- **CI GitHub Actions**: mỗi lần push tự chạy lại 36 checkpoint + kiểm tra syntax firmware/backend/app.
 - **6 bug đã tìm & sửa**: OLED trắng xanh · lệnh ENTER bị IR ghi đè · nhiễu bounce nút bấm · token JWT sai · barrier không lưu `db.gate` · test SSE đọc theo byte bị treo.
 - *Gợi ý hình: bảng kết quả test + ảnh OLED đang hiển thị.*
 

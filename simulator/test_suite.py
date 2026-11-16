@@ -35,6 +35,12 @@ def get(path):
     try:
         req = urllib.request.Request(BASE + path)
         return json.loads(urllib.request.urlopen(req, timeout=8).read())
+    except urllib.error.HTTPError as e:
+        try:
+            body = json.loads(e.read().decode())
+        except Exception:
+            body = {}
+        return {**body, "__status": e.code}
     except Exception as e:
         return {"__error": str(e)}
 
@@ -243,6 +249,19 @@ def main():
     check("Log RFID", isinstance(get("/api/rfid"), list))
     check("Log su kien", isinstance(get("/api/events"), list))
     check("Danh sach nguoi dung", len(get("/api/users")) >= 1)
+
+    # --- Dich vu ---
+    deep = get("/api/health/deep")
+    check("Health deep tra chi tiet he thong",
+          deep.get("ok") and deep.get("data", {}).get("slots") == 6 and "uptimeSec" in deep,
+          f"uptime={deep.get('uptimeSec')}s")
+    miss = get("/api/khong-ton-tai")
+    check("Endpoint la tra 404 JSON", miss.get("__status") == 404 and miss.get("ok") is False,
+          f"status={miss.get('__status')}")
+    bad = post("/api/booking", {"slot": "P99", "user": "SV01", "action": "reserve"})
+    check("Validate ma o sai -> 400", bad.get("__status") == 400, str(bad.get("__status")))
+    bad2 = post("/api/booking", {"slot": "P1", "user": "SV01", "action": "hack"})
+    check("Validate action sai -> 400", bad2.get("__status") == 400, str(bad2.get("__status")))
 
     # --- Dashboard ---
     try:

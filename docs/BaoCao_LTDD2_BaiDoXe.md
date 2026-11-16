@@ -139,6 +139,8 @@ App **không thể** tự publish trạng thái ô → không thể giả mạo 
 - **REST API**: 18 endpoint (xem README bảng đầy đủ).
 - **SSE realtime** (`/api/stream`): đẩy `slots` / `gate` / `receipt` / `booking` / `rfid` xuống Dashboard ngay khi có, tự reconnect 5s.
 - **Xác thực**: token ký bằng HMAC-SHA256 (`Authorization: Bearer <token>`), mật khẩu lưu dạng SHA-256.
+- **Bảo mật & độ bền API**: rate limit 120 req/phút mỗi IP (trả 429), validate input (mã ô chỉ `P1..P6`, `action` theo allowlist, tên đăng nhập 3–32 ký tự, lọc ký tự `<>`), 404/500 trả JSON chuẩn, log mọi request kèm thời gian xử lý.
+- **Chẩn đoán**: `GET /api/health/deep` trả uptime, phiên bản Node, trạng thái MQTT, số liệu từng bảng dữ liệu, bộ nhớ heap và bộ đếm.
 - **Thống kê**: doanh thu 7 ngày, doanh thu theo giờ trong ngày, top người dùng, tỉ lệ sử dụng theo ô.
 
 ### 6.2 Web Dashboard (5 tab, thuần HTML/CSS/JS + Chart.js)
@@ -207,8 +209,8 @@ python simulator/test_suite.py
 ```
 
 Bộ test tự bật/tắt simulator ở chế độ `quiet`, tự sinh tài khoản thử nghiệm không trùng lặp,
-và kiểm tra **32 checkpoint** xuyên suốt chuỗi Broker → Simulator → Backend → Dashboard.
-Kết quả lần chạy cuối: **32/32 PASS**.
+và kiểm tra **36 checkpoint** xuyên suốt chuỗi Broker → Simulator → Backend → Dashboard.
+Kết quả lần chạy cuối: **36/36 PASS**.
 
 | Nhóm | Checkpoint | Kết quả |
 |---|---|---|
@@ -221,9 +223,17 @@ Kết quả lần chạy cuối: **32/32 PASS**.
 | Thống kê | doanh thu > 0, 7 ngày, 24 mốc giờ, top user | ✅ |
 | Xác thực | đăng ký, đăng nhập, `me` bằng token, nạp tiền, sai mật khẩu → **401** | ✅ |
 | Lịch sử | hóa đơn, booking, log RFID, log sự kiện, danh sách user | ✅ |
+| **Dịch vụ** | `health/deep`, 404 JSON, validate mã ô sai → 400, action sai → 400 | ✅ |
 | Dashboard | HTML phục vụ, 5 tab, Chart.js, SSE | ✅ |
 
-### 9.2 Kiểm thử thủ công bổ sung
+### 9.2 CI tự động (GitHub Actions)
+
+File `.github/workflows/ci.yml` chạy lại toàn bộ 36 checkpoint **mỗi lần push** trên
+GitHub Actions với Mosquitto service sẵn có, đồng thời kiểm tra syntax firmware,
+backend và các file JSX của App React Native. Đây là bằng chứng chất lượng code
+tự động hoá — điểm cộng đáng kể khi GV đánh giá.
+
+### 9.3 Kiểm thử thủ công bổ sung
 
 | # | Hạng mục | Kết quả | Bằng chứng |
 |---|---|---|---|

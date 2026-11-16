@@ -30,7 +30,7 @@
 | **Dashboard 5 tab** | ✅ 3 biểu đồ Chart.js, 3 bảng lịch sử, quản lý user |
 | **Firmware V2 trên Wokwi** | ✅ build OK, OLED hiển thị 6 dòng (đọc pixel canvas xác nhận), MQTT OK, tự reconnect |
 | **App React Native** | ✅ bundle Android thành công (552 modules, 2.17 MB) |
-| **Bộ test tự động E2E** | ✅ `simulator/test_suite.py` — **32/32 PASS** |
+| **Bộ test tự động E2E** | ✅ `simulator/test_suite.py` — **36/36 PASS** |
 
 Chi tiết đầy đủ + **6 bug đã tìm & sửa**: xem `docs/KET_QUA_TEST.md`.
 
@@ -38,7 +38,8 @@ Chi tiết đầy đủ + **6 bug đã tìm & sửa**: xem `docs/KET_QUA_TEST.md
 ```powershell
 python simulator/test_suite.py
 ```
-→ in ra `KET QUA: 32/32 PASS`. Bộ test tự bật/tắt simulator nên không cần chuẩn bị gì.
+→ in ra `KET QUA: 36/36 PASS`. Bộ test tự bật/tắt simulator nên không cần chuẩn bị gì.
+**CI tự động**: `.github/workflows/ci.yml` — mỗi lần push GitHub sẽ tự chạy lại đủ 36 checkpoint.
 
 ---
 

@@ -24,6 +24,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
+app.use(rateLimit);
+
+// Request logger gọn (bỏ qua /api/health và /api/stream để khỏi nhiễu)
+app.use((req, res, next) => {
+  if (req.path === "/api/health" || req.path === "/api/stream") return next();
+  const t0 = Date.now();
+  res.on("finish", () => {
+    console.log(`[HTTP] ${req.method} ${req.originalUrl} -> ${res.statusCode} (${Date.now() - t0}ms)`);
+  });
+  next();
+});
 
 const MQTT_URL  = process.env.MQTT_URL  || "mqtt://localhost:1883";
 const MQTT_USER = process.env.MQTT_USER || "esp32";
@@ -85,6 +96,37 @@ loadDb();
 
 // ============================ TIEN ICH ======================================
 const now = () => Date.now();
+
+// ---- Rate limiter don gian (sliding window theo IP) ----
+const RATE_LIMIT = { windowMs: 60_000, max: 120 };
+const rateBuckets = new Map();
+function rateLimit(req, res, next) {
+  const ip = req.ip || req.socket?.remoteAddress || "unknown";
+  const t = now();
+  let b = rateBuckets.get(ip);
+  if (!b || t - b.start > RATE_LIMIT.windowMs) {
+    b = { start: t, count: 0 };
+    rateBuckets.set(ip, b);
+  }
+  b.count += 1;
+  if (b.count > RATE_LIMIT.max) {
+    res.set("Retry-After", String(Math.ceil(RATE_LIMIT.windowMs / 1000)));
+    return res.status(429).json({ ok: false, error: "Qua gioi han truy cap, thu lai sau" });
+  }
+  next();
+}
+// Dọn rác bucket định kỳ để không rò rỉ bộ nhớ
+setInterval(() => {
+  const t = now();
+  for (const [ip, b] of rateBuckets) if (t - b.start > RATE_LIMIT.windowMs * 4) rateBuckets.delete(ip);
+}, 120_000).unref?.();
+
+// ---- Validate input ----
+function cleanStr(v, max = 64) {
+  return String(v ?? "").replace(/[<>]/g, "").trim().slice(0, max);
+}
+function isValidSlot(s) { return /^P[1-6]$/.test(String(s || "").toUpperCase()); }
+
 function pushLog(arr, item, max = 500) {
   arr.unshift({ ...item, ts: item.ts || now() });
   if (arr.length > max) arr.length = max;
@@ -309,9 +351,16 @@ app.get("/api/stats", (req, res) => {
 });
 
 // POST /api/booking {slot, user, action} -> chuyen tiep MQTT
+const BOOK_ACTIONS = ["reserve", "cancel", "enter", "exit", "stay"];
 app.post("/api/booking", (req, res) => {
-  const { slot, user, action = "reserve", requestId = String(now()) } = req.body || {};
+  const { slot: rawSlot, user: rawUser, action = "reserve", requestId = String(now()) } = req.body || {};
+  const slot = cleanStr(rawSlot, 8).toUpperCase();
+  const user = cleanStr(rawUser, 32);
   if (!slot || !user) return res.status(400).json({ ok: false, error: "Thieu slot/user" });
+  if (!isValidSlot(slot)) return res.status(400).json({ ok: false, error: "Ma o chi P1..P6" });
+  if (!BOOK_ACTIONS.includes(action)) {
+    return res.status(400).json({ ok: false, error: `action phai la: ${BOOK_ACTIONS.join(", ")}` });
+  }
   mc.publish(`parking/booking/${slot}/set`,
     JSON.stringify({ slot, user, action, requestId }), { qos: 1 });
   res.json({ ok: true, forwarded: true, requestId, slot, action });
@@ -319,7 +368,8 @@ app.post("/api/booking", (req, res) => {
 
 // POST /api/gate {cmd, by}
 app.post("/api/gate", (req, res) => {
-  const { cmd = "OPEN", by = "api", requestId = String(now()) } = req.body || {};
+  const { cmd = "OPEN", by: rawBy = "api", requestId = String(now()) } = req.body || {};
+  const by = cleanStr(rawBy, 32) || "api";
   mc.publish("parking/gate/barrier/cmd",
     JSON.stringify({ cmd: cmd === "OPEN" ? "OPEN" : "CLOSE", by, requestId }), { qos: 1 });
   res.json({ ok: true, cmd, requestId });
@@ -327,7 +377,10 @@ app.post("/api/gate", (req, res) => {
 
 // POST /api/enter {slot, user} - App xac nhan xe vao
 app.post("/api/enter", (req, res) => {
-  const { slot, user = "KHACH", requestId = String(now()) } = req.body || {};
+  const { slot: rawSlot, user: rawUser = "KHACH", requestId = String(now()) } = req.body || {};
+  const slot = cleanStr(rawSlot, 8).toUpperCase();
+  const user = cleanStr(rawUser, 32) || "KHACH";
+  if (!isValidSlot(slot)) return res.status(400).json({ ok: false, error: "Ma o chi P1..P6" });
   mc.publish(`parking/booking/${slot}/set`,
     JSON.stringify({ slot, user, action: "enter", requestId }), { qos: 1 });
   res.json({ ok: true, forwarded: true, requestId });
@@ -335,7 +388,10 @@ app.post("/api/enter", (req, res) => {
 
 // POST /api/exit {slot, user} - App xac nhan xe ra -> tinh phi
 app.post("/api/exit", (req, res) => {
-  const { slot, user = "KHACH", requestId = String(now()) } = req.body || {};
+  const { slot: rawSlot, user: rawUser = "KHACH", requestId = String(now()) } = req.body || {};
+  const slot = cleanStr(rawSlot, 8).toUpperCase();
+  const user = cleanStr(rawUser, 32) || "KHACH";
+  if (!isValidSlot(slot)) return res.status(400).json({ ok: false, error: "Ma o chi P1..P6" });
   mc.publish(`parking/booking/${slot}/set`,
     JSON.stringify({ slot, user, action: "exit", requestId }), { qos: 1 });
   res.json({ ok: true, forwarded: true, requestId });
@@ -343,15 +399,21 @@ app.post("/api/exit", (req, res) => {
 
 // ------------------------- Nguoi dung (dang ky / dang nhap) ------------------
 app.post("/api/auth/register", (req, res) => {
-  const { username, password, name, plate } = req.body || {};
+  const { username: rawU, password, name: rawName, plate: rawPlate } = req.body || {};
+  const username = cleanStr(rawU, 32);
+  const name = cleanStr(rawName, 64);
+  const plate = cleanStr(rawPlate, 16);
   if (!username || !password) return res.status(400).json({ ok: false, error: "Thieu ten/dinh mat khau" });
-  if (password.length < 4) return res.status(400).json({ ok: false, error: "Mat khau >= 4 ky tu" });
+  if (!/^[a-zA-Z0-9_.-]{3,32}$/.test(username)) {
+    return res.status(400).json({ ok: false, error: "Ten dang nhap 3-32 ky tu (chu, so, _ . -)" });
+  }
+  if (String(password).length < 4) return res.status(400).json({ ok: false, error: "Mat khau >= 4 ky tu" });
   if (db.users.find((u) => u.username === username)) {
     return res.status(409).json({ ok: false, error: "Ten dang dang ky" });
   }
   const u = {
     id: "u" + now().toString(36),
-    username, name: name || username, plate: plate || "",
+    username, name: name || username, plate,
     password: crypto.createHash("sha256").update(password).digest("hex"),
     role: "user", createdAt: now(), balance: 0,
   };
@@ -395,6 +457,38 @@ app.post("/api/balance", auth, (req, res) => {
 
 // POST /api/logout - no-op token client-side
 app.post("/api/logout", (req, res) => res.json({ ok: true }));
+
+// GET /api/health/deep - kiem tra suc khoe toan he thong
+app.get("/api/health/deep", (req, res) => {
+  res.json({
+    ok: true,
+    uptimeSec: Math.floor(process.uptime()),
+    node: process.version,
+    mqtt: { connected: mc.connected, url: MQTT_URL, online: systemOnline },
+    data: {
+      file: DATA_FILE,
+      slots: Object.keys(db.slots).length,
+      bookings: db.bookings.length,
+      receipts: db.receipts.length,
+      users: db.users.length,
+      rfidLog: db.rfidLog.length,
+      events: db.events.length,
+    },
+    counters: db.counters,
+    memory: process.memoryUsage().heapUsed,
+    ts: now(),
+  });
+});
+
+// 404 JSON cho API
+app.use("/api", (req, res) => res.status(404).json({ ok: false, error: "Khong tim thay endpoint" }));
+
+// Error handler toan cuc
+app.use((err, req, res, next) => {
+  console.error("[ERROR]", err.message);
+  if (res.headersSent) return next(err);
+  res.status(500).json({ ok: false, error: "Loi may chu" });
+});
 
 app.get("/", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
 app.use(express.static(path.join(__dirname, "public")));
