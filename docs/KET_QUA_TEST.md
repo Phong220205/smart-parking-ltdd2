@@ -1,45 +1,171 @@
-# KẾT QUẢ TEST THẬT NGÀY 16/11/2026 (máy SV, không phần cứng)
+# KẾT QUẢ TEST THẬT – BẢN NÂNG CẤP 2.0 (16/11/2026)
 
 ## Môi trường
-- Docker Desktop 28.5.1, Mosquitto 2.0.22, Node v24.19.0, Python 3.13.9, paho-mqtt.
+- Docker Desktop 28.5.1 · Mosquitto 2.0.22 · Node v24.19.0 · Python 3.13.9 · Chrome (CDP)
+- Firmware: `esp32/parking_firmware.ino` (565 dòng) build trên Wokwi
+- Backend: `backend/server.js` · Dashboard: `backend/public/index.html` · App: `app/src/*.js`
 
-## 1. Broker (Lab2) – PASS
-```
-parking-mosquitto Up 0.0.0.0:1883->1883, 0.0.0.0:9001->9001
-mosquitto version 2.0.22 running
-Opening ipv4 listen socket on port 1883
-Opening websockets listen socket on port 9001
-```
-User: esp32/esp32123, app/app123. File `broker/passwd` + `broker/config/passwd` đã tạo, gitignore nên không lộ lên GitHub.
+---
 
-## 2. Simulator thay ESP32 (Lab1) – PASS
+## 1. Broker MQTT (Lab2) – PASS
 ```
+NAME                IMAGE                          STATUS         PORTS
+parking-mosquitto   eclipse-mosquitto:2.0   Up      0.0.0.0:1883->1883/tcp, 0.0.0.0:9001->9001/tcp
+```
+- Mở đúng 2 listener: **1883** (ESP32/simulator) + **9001** (WebSocket cho App).
+- User `esp32/esp32123` (thiết bị) + `app/app123` (ứng dụng), file `acl.conf` phân quyền topic.
+
+## 2. Simulator (thay ESP32) – PASS
+```
+=======================================================
 [SIM] Chay mode=quiet - Broker localhost:1883
-Received PUBLISH parking/slot/P1..P6/status
-Received PUBLISH parking/slots/snapshot
-Received PUBLISH parking/gate/barrier/state
+[SIM] Enter: RFID:xxx | BOOK:P1:SV01 | CANCEL:P1:SV01 | ENTER:P1:SV01 | EXIT:P1 | STAY:P1:45
+=======================================================
+```
+- 3 mode: `demo` / `quiet` / `chaos`. Thread nền: `expire_loop` (hết hạn 5 phút), `beat_loop` (heartbeat 15s).
+- Lệnh `STAY:P1:95` giả lập xe đã đứng 95 phút để demo tính phí.
+
+## 3. Backend REST + lưu trữ – PASS
+```
+GET /api/health  -> {"ok":true,"mqtt":true,"online":true,"slots":6,"ts":1794842798834}
+```
+- Dữ liệu lưu bền vững tại `data/parking.json` (tự tạo, gitignore).
+- `GET /api/stats` → doanh thu 7 ngày, theo giờ, top user, tỉ lệ dùng ô.
+
+## 4. Luồng nghiệp vụ đầy đủ – PASS
+| Bước | API | Kết quả |
+|---|---|---|
+| Đặt chỗ P3 cho SV01 | `POST /api/booking` | ✅ `reservedBy = SV01` |
+| **Đặt trùng P5 (SV02)** | MQTT trực tiếp | ✅ `{"ok":false,"msg":"O da duoc dat boi SV01"}` |
+| Xe vào P3 | `POST /api/enter` | ✅ state `ENTERED` |
+| Xe ra P3 | `POST /api/exit` | ✅ state `FREE` + publish receipt |
+| Hủy đặt | `action=cancel` | ✅ |
+
+**Log chống trùng (đọc trực tiếp từ Broker):**
+```
+NHAN DUOC: {"slot": "P5", "state": "RESERVED", "user": "SV02",
+            "requestId": "sv02c", "ok": false,
+            "msg": "O da duoc dat boi SV01"}
+=> OK = False | MSG = O da duoc dat boi SV01
 ```
 
-## 3. Backend REST (Lab2/Server) – PASS
-`GET http://localhost:3100/api/status`:
-```json
-{"slots":{"P1":{"occupied":false,"reservedBy":null},"P3":{"occupied":false,"reservedBy":null}},"gate":"CLOSED","online":true}
+## 5. Tính phí – PASS
+| Tình huống | Kết quả |
+|---|---|
+| Xe đứng 1 phút | `minutes=1, fee=0` (dưới 30 phút miễn phí) ✅ |
+| **Xe đứng 95 phút** | `minutes=95, fee=6000` (2 giờ × 3000đ) ✅ |
+
+```
+>>> HOA DON: {"slot": "P6", "user": "SV07", "minutes": 95, "fee": 6000, "ts": 1794843055940}
 ```
 
-## 4. Đặt chỗ + chống trùng (Lab2+Lab3) – PASS
-- POST /api/booking P3 user SV01 requestId test1 -> forwarded, status P3 reservedBy=SV01.
-- POST /api/booking P3 user SV02 requestId test2 -> retained state:
-```json
-{"slot":"P3","state":"RESERVED","user":"SV02","requestId":"test2","ok":false,"msg":"O da duoc dat boi SV01"}
+## 6. Thống kê – PASS
 ```
-- POST /api/booking cancel P3 SV01 -> OK.
-- POST /api/gate OPEN/CLOSE -> OK, log broker thấy barrier/cmd -> barrier/state.
+Doanh thu hom nay: 6000 | Tong: 6000 | Luot xe: 5 | Dat cho: 5
+Days: 7 ngay | TopUsers: SV01, SV07
+```
 
-## 5. App (Lab3) – sẵn sàng
-- `node --check App.js` OK, `node --check parkingMqtt.js` OK.
-- Chạy: `cd app && npm install && npx expo start`, sửa host thành `ws://<IP-may-broker>:9001`.
+## 7. Tài khoản & bảo mật – PASS
+| Test | Kết quả |
+|---|---|
+| `POST /api/auth/register` SV03 | ✅ tạo tài khoản (họ tên, biển số) |
+| `POST /api/auth/login` | ✅ token 138 ký tự |
+| `GET /api/auth/me` (Bearer token) | ✅ `{"username":"SV03","name":"Nguyen Van C","plate":"30A-123.45"}` |
+| **Login sai mật khẩu** | ✅ **HTTP 401 Unauthorized** |
+| `POST /api/balance` nạp 50.000đ | ✅ `balance: 50000` |
 
-## Việc còn lại để đủ 8 link
-1. `gh repo create smart-parking-ltdd2 --public --source=. --push` (có link 1,2,4,6).
-2. Wokwi Share (link 3), Render deploy backend (link 5).
-3. Quay video simulator+App (link 8), xuất báo cáo/slide Drive (link 7).
+## 8. Web Dashboard (5 tab) – PASS
+Kiểm chứng bằng CDP trên `http://localhost:3000`:
+```
+KPI: 6.000đ | Doanh thu hôm nay | 6.000đ | Tổng doanh thu | 5 | Lượt xe ra vào | 6/6 | Ô đang trống
+CANVAS: chartRevenue:1006x368, chartHour:1006x368, chartUsers:1006x1006
+CHART_LIB: function
+DATA_LEN: 7
+```
+- 3 biểu đồ Chart.js vẽ đúng dữ liệu.
+- 3 bảng lịch sử có dữ liệu thật:
+```
+RECEIPTS: P6 SV07 95 phút 6.000đ | P4 SV01 1 phút 0đ | P2 SV01 1 phút 0đ | P3 SV01 ...
+BOOKINGS: P6 SV07 reserve OK | P4 SV01 entered OK | P4 SV01 free OK | P5 SV01 reserve OK ...
+RFID: SIM6692 P4 ENTER SV01 | SIM9591 P2 ENTER SV01 | SIM2301 P3 ENTER SV01
+```
+- SSE `/api/stream` hoạt động (Dashboard tự cập nhật không cần F5).
+
+## 9. Firmware V2 trên Wokwi – PASS
+```
+=========================================
+ SMART PARKING - ESP32 (ban nang cap)
+=========================================
+[OLED] OK - 128x64 @ 0x3C
+[RFID] RC522 khoi dong OK
+[WiFi] ....... IP=10.10.0.2
+[MQTT] OK -> test.mosquitto.org
+Slots: ______ MQTT:OK DT:0d
+```
+
+**Đọc trực tiếp pixel trên canvas OLED** (6 dòng đều hiển thị):
+```
+SMART PARKING   M
+Trong:6/6 CLOSED
+P1-6:______
+DT:0d
+Up:0m0s MQTT:OK
+RFID: --
+```
+
+**Lệnh Serial hoạt động:**
+```
+> BOOK:P2:SV09      -> [MSG] DAT P2 OK
+> ENTER:P2:SV09     -> [MSG] XE VAO P2
+> EXIT:P2           -> [EXIT] P2 user=SV09 1 phut - 0 VND
+> GATE:OPEN         -> Barrier mo
+> RFID:A1B2C3       -> [RFID] A1B2C3
+```
+
+## 10. Bug đã phát hiện & sửa trong quá trình test
+
+### Bug 1 – Màn hình OLED trắng xanh trên Wokwi (đã sửa)
+- **Hiện tượng**: firmware chạy, Serial in log đúng, nhưng màn hình trắng xanh im lặng.
+- **Nguyên nhân**: dùng part `wokwi-ssd1306` đã **deprecated** (chân `VIN/DATA/CLK`) thay vì `board-ssd1306` (chân `VCC/SDA/SCL`), và ký hiệu chân ESP32 phải có tiền tố `D` (`esp:D21` thay vì `esp:21`).
+- **Sửa**: đổi part + đấu lại đúng chân. → OLED hiển thị đủ 6 dòng.
+
+### Bug 2 – Lệnh `ENTER` bị vòng lặp đọc IR ghi đè ngay (đã sửa)
+- **Hiện tượng**: gửi `ENTER:P2:SV09` → hệ thống ghi nhận xe vào rồi ngay lập tức ghi nhận xe ra, sinh hóa đơn sai.
+- **Nguyên nhân**: vòng lặp đọc IR so sánh `digitalRead(pin)` với `slots[].occupied`; khi lệnh thủ công set `occupied=true`, vòng lặp thấy chân vẫn HIGH → coi như xe đã đi → `carLeaves()`.
+- **Sửa**: tách 3 biến trạng thái:
+  - `irShadow[6]` – trạng thái cảm biến đã xác nhận.
+  - `manualMode[6]` – ô đang do người dùng điều khiển → vòng lặp IR bỏ qua.
+  - Lệnh `enter` bật `manualMode`, lệnh `exit` tắt và đồng bộ lại cảm biến.
+
+### Bug 3 – Nhiễu bounce của nút bấm (đã sửa)
+- **Hiện tượng**: bấm nút P1 trên Wokwi có thể sinh 2 cạnh (vào/ra) trong vài chục ms → hóa đơn rác.
+- **Sửa**: thêm **bộ lọc debounce 300 ms** cho cảm biến IR:
+  - `irRaw[6]` – tín hiệu thô, đọc mỗi 50 ms.
+  - `irChangeAt[6]` – mốc thời gian thay đổi.
+  - `irStable[6]` – tín hiệu đã ổn định ≥ 300 ms mới được chấp nhận.
+- Đây là kỹ thuật **chống nhiễu cảm biến** đáng đưa vào phần "xử lý lỗi" của báo cáo.
+
+### Bug 4 – Token đăng nhập không verify được (đã sửa)
+- **Hiện tượng**: `GET /api/auth/me` trả 401 dù token đúng.
+- **Nguyên nhân**: hàm `b64url(buf)` gọi `buf.toString("base64url")` trên **String** (chưa encode Buffer) → token sai.
+- **Sửa**: `b64url(buf) { return Buffer.from(buf).toString("base64url"); }`.
+
+## 11. Tình trạng cuối cùng
+
+| Hạng mục | Trạng thái |
+|---|---|
+| Firmware ESP32 (Wokwi) | ✅ build + chạy + OLED hiển thị + MQTT OK |
+| Broker Mosquitto | ✅ 1883 + 9001 + ACL + LWT |
+| Simulator Python | ✅ 3 mode + 6 lệnh console |
+| Backend REST + SSE + JWT | ✅ 18 endpoint, lưu JSON bền vững |
+| Web Dashboard 5 tab | ✅ biểu đồ + 3 bảng lịch sử + quản lý user |
+| App React Native 4 tab | ✅ cú pháp JSX sạch (`@babel/parser`), sẵn sàng chạy Expo Go |
+| Báo cáo + slide | ✅ `.docx` 44 KB, `.pptx` 43 KB (13 slide), sinh tự động từ markdown |
+
+## 12. Việc còn lại (cần làm tay)
+
+1. `cd app && npm install && npx expo start` → quét QR bằng Expo Go, chỉnh IP broker trong tab Cài đặt.
+2. Deploy `backend/` lên Render (theo `backend/DEPLOY.md`) → lấy link server cloud lâu dài.
+3. Xuất báo cáo/slide lên Drive share "Anyone with the link" → dán link.
+4. Quay video demo 3 phút → up YouTube unlisted / Drive → dán link.
+5. Bấm **Share** trên Wokwi (project đã share sẵn).

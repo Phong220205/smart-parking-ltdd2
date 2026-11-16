@@ -82,8 +82,10 @@ bool manualMode[NUM_SLOTS] = {false, false, false, false, false, false};
 // lien tiep trong vai chuc ms. Neu khong loc, se ghi nhan "xe vao" roi
 // ngay "xe ra" -> phat sinh hoa don sai.
 // Quy tac: tin hieu moi chi duoc chap nhan sau khi giu lien tuc
-// DEBOUNCE_MS (300ms). Do la 2 lan doc cam bien o 100ms.
-#define DEBOUNCE_MS 300
+// DEBOUNCE_MS (200ms). Doc cam bien moi 50ms -> 4 lan xac nhan.
+// 200ms la nhip chan cho nut bam co: du de chong bounce (thuong <50ms)
+// va du nhanh de thao tac tren Wokwi.
+#define DEBOUNCE_MS 200
 bool irRaw[NUM_SLOTS] = {false, false, false, false, false, false};   // tin hieu thô
 bool irStable[NUM_SLOTS] = {false, false, false, false, false, false}; // tin hieu da loc
 unsigned long irChangeAt[NUM_SLOTS] = {0, 0, 0, 0, 0, 0};            // luc tin hieu thay doi
@@ -550,7 +552,7 @@ void loop() {
 
   // --- Doc cam bien IR 6 o (co loc nhieu debounce) ---
   // Buoc 1: doc tin hieu tho moi 50ms
-  // Buoc 2: chi chap nhan khi tin hieu giu lien tuc DEBOUNCE_MS (300ms)
+  // Buoc 2: chi chap nhan khi tin hieu giu lien tuc DEBOUNCE_MS (200ms)
   //         -> loai bo hien tuong bounce cua nut bam
   // Buoc 3: khi trang thai da on dinh -> ghi nhan xe vao / xe ra
   static unsigned long lastRead = 0;
@@ -563,7 +565,7 @@ void loop() {
         irRaw[i] = raw;
         irChangeAt[i] = millis();
       } else if (raw != irStable[i] && millis() - irChangeAt[i] >= DEBOUNCE_MS) {
-        // Da giu on dinh >= 300ms -> chap nhan trang thai moi
+        // Da giu on dinh >= 200ms -> chap nhan trang thai moi
         irStable[i] = raw;
         if (manualMode[i]) { irShadow[i] = raw; continue; }  // o thu cong -> bo qua
         if (raw) {
