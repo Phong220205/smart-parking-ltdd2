@@ -1,12 +1,13 @@
-// LAB1 - Smart Parking firmware ESP32 (ban I2C tri dut diem tu len chu)
-// Thu vien Wokwi: PubSubClient, ArduinoJson, ESP32Servo, MFRC522, LiquidCrystal I2C
+// LAB1 - Smart Parking firmware ESP32 (ban OLED SSD1306 thay LCD)
+// Thu vien Wokwi: PubSubClient, ArduinoJson, ESP32Servo, MFRC522, Adafruit GFX, Adafruit SSD1306
 
 #include <WiFi.h>
 #include <Wire.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <ESP32Servo.h>
-#include <LiquidCrystal_I2C.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
 #include <SPI.h>
 #include <MFRC522.h>
 
@@ -23,10 +24,15 @@ const int BUZZER_PIN = 2;
 #define RFID_SS 5
 #define RFID_RST 4
 
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define OLED_RESET -1
+#define SCREEN_ADDRESS 0x3C
+
 WiFiClient espClient;
 PubSubClient mqtt(espClient);
 Servo barrier;
-LiquidCrystal_I2C lcd(0x27, 16, 2);
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 MFRC522 rfid(RFID_SS, RFID_RST);
 
 struct Slot { bool occupied=false; String reservedBy=""; unsigned long reserveAt=0; unsigned long enterAt=0; };
@@ -38,24 +44,28 @@ bool mqttOK=false;
 int slotIndex(String id){ for(int i=0;i<NUM_SLOTS;i++) if(id==SLOT_ID[i]) return i; return -1; }
 void beep(int n=2){ for(int i=0;i<n;i++){ digitalWrite(BUZZER_PIN,HIGH); delay(120); digitalWrite(BUZZER_PIN,LOW); delay(120);} }
 
-void lcdSetup(){
-  Wire.begin(21, 22);
-  delay(200);
-  lcd.init();
-  lcd.backlight();
-  lcd.clear();
-  Serial.println("LCD addr: 0x27 fix cung");
-}
-
-void drawLCD(String extra=""){
+void drawOLED(String extra=""){
   int freeN=0; for(int i=0;i<NUM_SLOTS;i++) if(!slots[i].occupied) freeN++;
-  lcd.clear(); lcd.setCursor(0,0);
-  String l1="Trong:"+String(freeN)+"/6 "+gateState;
-  lcd.print(l1.substring(0,16));
-  lcd.setCursor(0,1);
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0,0);
+  display.println("Smart Parking");
+  display.setCursor(0,12);
+  display.print("Trong:");
+  display.print(freeN);
+  display.print("/6 ");
+  display.println(gateState);
+  display.setCursor(0,24);
   String s=""; for(int i=0;i<NUM_SLOTS;i++) s+=slots[i].occupied?"X":(slots[i].reservedBy!=""?"R":"_");
   if(extra!="") s=extra.substring(0,16);
-  lcd.print(s);
+  display.println(s);
+  display.setCursor(0,36);
+  display.print("P1-6: ");
+  display.println(s);
+  display.setCursor(0,48);
+  display.print(mqttOK?"MQTT:OK":"MQTT:WAIT");
+  display.display();
 }
 void pubSlot(int i){
   if(!mqtt.connected()) return;
@@ -81,7 +91,7 @@ void pubGate(){
   StaticJsonDocument<256> d; d["gate"]=gateState; d["ts"]=millis(); char b[256]; serializeJson(d,b);
   mqtt.publish("parking/gate/barrier/state",b,true);
 }
-void setGate(String g){ gateState=g; barrier.write(g=="OPEN"?90:0); pubGate(); drawLCD(); }
+void setGate(String g){ gateState=g; barrier.write(g=="OPEN"?90:0); pubGate(); drawOLED(); }
 void onMsg(char* topic,byte* p,unsigned len){
   String s; for(unsigned i=0;i<len;i++) s+=(char)p[i];
   StaticJsonDocument<384> d; if(deserializeJson(d,s)) return;
@@ -95,32 +105,44 @@ void onMsg(char* topic,byte* p,unsigned len){
       if(slots[i].reservedBy!=""&&slots[i].reservedBy!=user){ pubBookingState(slot,"RESERVED",user,req,false,"O da co nguoi dat"); beep(3); return; }
       slots[i].reservedBy=user; slots[i].reserveAt=millis();
       pubBookingState(slot,"RESERVED",user,req,true,"Dat o thanh cong");
-      pubSlot(i); pubSnapshot(); beep(1); drawLCD();
+      pubSlot(i); pubSnapshot(); beep(1); drawOLED();
     } else if(act=="cancel"){
-      if(slots[i].reservedBy==user){ slots[i].reservedBy=""; pubBookingState(slot,"FREE",user,req,true,"Da huy"); pubSlot(i); pubSnapshot(); drawLCD(); }
+      if(slots[i].reservedBy==user){ slots[i].reservedBy=""; pubBookingState(slot,"FREE",user,req,true,"Da huy"); pubSlot(i); pubSnapshot(); drawOLED(); }
       else pubBookingState(slot,"ERROR",user,req,false,"Khong phai nguoi dat");
     }
   }
 }
 void setup(){
   Serial.begin(115200);
-  Serial.println("SMART PARKING I2C START");
+  Serial.println("SMART PARKING OLED START");
   for(int i=0;i<NUM_SLOTS;i++) pinMode(IR_PIN[i],INPUT_PULLUP);
   pinMode(BUZZER_PIN,OUTPUT);
   barrier.attach(SERVO_PIN); barrier.write(0);
-  lcdSetup();
-  lcd.clear(); lcd.setCursor(0,0); lcd.print("Smart Parking");
-  lcd.setCursor(0,1); lcd.print("Trong:6/6 CLOSED");
-  Serial.println("LCD DA GHI CHU");
+  Wire.begin(21, 22);
+  if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)){
+    Serial.println("OLED khong thay 0x3C");
+    for(;;) delay(100);
+  }
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0,0);
+  display.println("Smart Parking");
+  display.println("Trong:6/6 CLOSED");
+  display.display();
+  Serial.println("OLED DA GHI CHU");
   SPI.begin(18,19,23,5); rfid.PCD_Init();
   WiFi.begin(WIFI_SSID,WIFI_PASS);
   Serial.print("WiFi"); int t=0; while(WiFi.status()!=WL_CONNECTED&&t<50){ delay(400); Serial.print("."); t++; }
   Serial.println(WiFi.localIP());
-  lcd.clear(); lcd.setCursor(0,0); lcd.print(WiFi.localIP().toString());
-  lcd.setCursor(0,1); lcd.print("MQTT...");
+  display.clearDisplay();
+  display.setCursor(0,0);
+  display.println(WiFi.localIP().toString());
+  display.println("MQTT...");
+  display.display();
   delay(800);
   mqtt.setServer(MQTT_HOST,MQTT_PORT); mqtt.setCallback(onMsg); mqtt.setBufferSize(2048);
-  drawLCD();
+  drawOLED();
 }
 bool mqttTryConnect(){
   String id="esp32-parking-"+String(random(0xffff),HEX);
@@ -139,15 +161,15 @@ void loop(){
       bool occ=(digitalRead(IR_PIN[i])==LOW);
       if(occ!=slots[i].occupied){ slots[i].occupied=occ; ch=true; if(occ) slots[i].enterAt=millis(); else slots[i].reservedBy=""; pubSlot(i); pubSnapshot(); }
     }
-    if(ch) drawLCD();
+    if(ch) drawOLED();
   }
   if(rfid.PICC_IsNewCardPresent()&&rfid.PICC_ReadCardSerial()){
     String c=""; for(byte i=0;i<rfid.uid.size;i++){ char h[4]; sprintf(h,"%02X",rfid.uid.uidByte[i]); c+=h; }
-    Serial.print("RFID: "); Serial.println(c); beep(1); rfid.PICC_HaltA(); drawLCD(c);
+    Serial.print("RFID: "); Serial.println(c); beep(1); rfid.PICC_HaltA(); drawOLED(c);
   }
-  if(Serial.available()){ String l=Serial.readStringUntil('\n'); l.trim(); if(l.startsWith("RFID:")){ drawLCD(l.substring(5)); } }
+  if(Serial.available()){ String l=Serial.readStringUntil('\n'); l.trim(); if(l.startsWith("RFID:")){ drawOLED(l.substring(5)); } }
   if(millis()-lastLcd>1000){
-    lastLcd=millis(); drawLCD();
+    lastLcd=millis(); drawOLED();
     Serial.print("Slots: "); for(int i=0;i<NUM_SLOTS;i++) Serial.print(slots[i].occupied?"X":"_");
     Serial.print(" MQTT:"); Serial.println(mqttOK?"OK":"WAIT");
   }
