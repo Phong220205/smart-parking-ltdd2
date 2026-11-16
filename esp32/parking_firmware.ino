@@ -1,11 +1,12 @@
-// LAB1 - Smart Parking firmware ESP32 (ban LCD song song cho len chu)
-// Thu vien Wokwi: PubSubClient, ArduinoJson, ESP32Servo, MFRC522, LiquidCrystal
+// LAB1 - Smart Parking firmware ESP32 (ban I2C tri dut diem tu len chu)
+// Thu vien Wokwi: PubSubClient, ArduinoJson, ESP32Servo, MFRC522, LiquidCrystal I2C
 
 #include <WiFi.h>
+#include <Wire.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <ESP32Servo.h>
-#include <LiquidCrystal.h>
+#include <LiquidCrystal_I2C.h>
 #include <SPI.h>
 #include <MFRC522.h>
 
@@ -25,7 +26,7 @@ const int BUZZER_PIN = 2;
 WiFiClient espClient;
 PubSubClient mqtt(espClient);
 Servo barrier;
-LiquidCrystal lcd(21,22,16,17,32,33);
+LiquidCrystal_I2C lcd(0x27, 16, 2);
 MFRC522 rfid(RFID_SS, RFID_RST);
 
 struct Slot { bool occupied=false; String reservedBy=""; unsigned long reserveAt=0; unsigned long enterAt=0; };
@@ -36,6 +37,24 @@ bool mqttOK=false;
 
 int slotIndex(String id){ for(int i=0;i<NUM_SLOTS;i++) if(id==SLOT_ID[i]) return i; return -1; }
 void beep(int n=2){ for(int i=0;i<n;i++){ digitalWrite(BUZZER_PIN,HIGH); delay(120); digitalWrite(BUZZER_PIN,LOW); delay(120);} }
+
+void lcdSetup(){
+  Wire.begin(21, 22);
+  delay(200);
+  // tu dong tim dia chi LCD 0x27 / 0x3F
+  byte addr = 0x27;
+  Wire.beginTransmission(0x27);
+  if(Wire.endTransmission()!=0){
+    Wire.beginTransmission(0x3F);
+    if(Wire.endTransmission()==0) addr = 0x3F;
+  }
+  // khoi tao lai dung dia chi tim duoc
+  lcd = LiquidCrystal_I2C(addr, 16, 2);
+  lcd.init();
+  lcd.backlight();
+  lcd.clear();
+  Serial.print("LCD addr: 0x"); Serial.println(addr, HEX);
+}
 
 void drawLCD(String extra=""){
   int freeN=0; for(int i=0;i<NUM_SLOTS;i++) if(!slots[i].occupied) freeN++;
@@ -94,11 +113,11 @@ void onMsg(char* topic,byte* p,unsigned len){
 }
 void setup(){
   Serial.begin(115200);
-  Serial.println("TEST LCD SONG SONG FULL");
+  Serial.println("SMART PARKING I2C START");
   for(int i=0;i<NUM_SLOTS;i++) pinMode(IR_PIN[i],INPUT_PULLUP);
   pinMode(BUZZER_PIN,OUTPUT);
   barrier.attach(SERVO_PIN); barrier.write(0);
-  lcd.begin(16,2);
+  lcdSetup();
   lcd.clear(); lcd.setCursor(0,0); lcd.print("Smart Parking");
   lcd.setCursor(0,1); lcd.print("Trong:6/6 CLOSED");
   Serial.println("LCD DA GHI CHU");
