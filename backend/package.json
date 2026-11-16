@@ -1,0 +1,17 @@
+{
+  "name": "parking-backend",
+  "version": "1.0.0",
+  "description": "Backend Smart Parking: cau noi MQTT <-> REST API, luu booking/billing",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "mqtt": "^5.3.5",
+    "cors": "^2.8.5",
+    "dayjs": "^1.11.11"
+  }
+}

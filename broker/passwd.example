@@ -1,0 +1,6 @@
+# user: esp32 / pass: esp32123  (thiet bi)
+# user: app / pass: app123 (dien thoai)
+# Tao file passwd that bang: mosquitto_passwd -c passwd esp32
+# Noi dung mau nay de doc bao cao, khi chay that phai tao lai bang lenh tren.
+# esp32:$7$101$...
+# app:$7$101$...

@@ -1,0 +1,11 @@
+node_modules/
+.expo/
+dist/
+*.log
+.env
+__pycache__/
+*.pyc
+mosquitto-data/
+mosquitto-log/
+passwd
+.DS_Store

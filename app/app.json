@@ -1,0 +1,15 @@
+{
+  "expo": {
+    "name": "Smart Parking LTDD2",
+    "slug": "smart-parking-ltdd2",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": { "image": "./assets/splash.png", "resizeMode": "contain", "backgroundColor": "#0984e3" },
+    "assetBundlePatterns": ["**/*"],
+    "ios": { "supportsTablet": true },
+    "android": { "package": "com.ltdd2.smartparking", "versionCode": 1 },
+    "web": { "favicon": "./assets/favicon.png" }
+  }
+}
