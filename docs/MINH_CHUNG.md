@@ -29,6 +29,25 @@
 12. **Ảnh Dashboard tab Người dùng** – đăng ký SV03 + bảng danh sách user (lượt xe, chi tiêu).
 13. **Ảnh Terminal** – `curl http://localhost:3000/api/health` → `{"ok":true,"mqtt":true,"online":true,"slots":6}`.
 
+### Nhóm 3b – Server cloud + MQTT-WS Bridge (điểm nhấn mới)
+13b. **Ảnh trình duyệt mở server cloud** – thanh địa chỉ `https://smart-parking-ltdd2.onrender.com`,
+   Dashboard 5 tab hiển thị đầy đủ, banner "● Broker ONLINE".
+13c. **Ảnh Terminal gọi API cloud**:
+   ```powershell
+   curl https://smart-parking-ltdd2.onrender.com/api/health
+   {"ok":true,"mqtt":true,"online":true,"slots":6,...}
+   curl https://smart-parking-ltdd2.onrender.com/api/bridge
+   {"ok":true,"path":"/mqtt","clients":2,"subscriptions":["parking/slot/+/status",...]}
+   ```
+13d. **Ảnh test bridge 2 chiều** – chạy `node backend/test_bridge.js wss://smart-parking-ltdd2.onrender.com/mqtt`
+   → log `=== KET QUA: BRIDGE HOAT DONG (2 chieu) ===`.
+13e. **Ảnh App mở tab Cài đặt** – chỉ 1 ô "Link server" đã điền
+   `https://smart-parking-ltdd2.onrender.com`, chế độ "Qua Backend", URL MQTT tự sinh.
+
+### Nhóm 3c – Ảnh minh chứng đã chụp sẵn (docs/anh/)
+- `docs/anh/dashboard-local-sodobai.png` – Dashboard tab Sơ đồ bãi (chạy local).
+- `docs/anh/dashboard-cloud-thongke.png` – Dashboard tab Thống kê trên **server cloud thật**.
+
 ### Nhóm 4 – Ứng dụng di động (Lab3)
 14. **Ảnh App Expo Go – tab Bãi** – lưới 6 ô màu + banner ONLINE + barrier.
 15. **Ảnh App – đặt chỗ** – popup kết quả "✅ Thành công / Dat o thanh cong, giu cho 5 phut".
@@ -70,3 +89,34 @@
 - Bật `Auto scroll` trong Serial Monitor để log cuộn đều.
 - Trước khi quay: `docker compose up -d` → `python simulator/parking_simulator.py --mode demo` → `cd backend && npm start` → `cd app && npx expo start`.
 - Xóa `data/parking.json` trước khi quay nếu muốn thống kê sạch từ đầu.
+
+---
+
+## D. Quay demo trên SERVER CLOUD (khuyên dùng cho video nộp bài)
+
+Ưu điểm: **không cần mở Docker / Wokwi trong lúc quay**, chỉ cần 1 trình duyệt +
+1 điện thoại. Mọi thứ đều chạy trên `https://smart-parking-ltdd2.onrender.com`.
+
+```powershell
+# 1. Bật simulator kết nối broker public (thay cho ESP32)
+python simulator/parking_simulator.py --mode demo --no-auth --host test.mosquitto.org --port 1883
+
+# 2. Mở Dashboard cloud
+start https://smart-parking-ltdd2.onrender.com
+```
+
+Trên điện thoại: mở App → ⚙️ Cài đặt kết nối → dán
+`https://smart-parking-ltdd2.onrender.com` → chế độ **Qua Backend** → Kết nối lại.
+
+**Kịch bản quay trên cloud (2 phút):**
+| Mốc | Nội dung |
+|---|---|
+| 0:00 | Dashboard cloud: sơ đồ 6 ô, banner "Broker ONLINE" |
+| 0:20 | App: đặt chỗ P3 → popup "Thành công" → ô chuyển màu vàng |
+| 0:50 | **Máy 2 đặt trùng P3** → "O da duoc dat boi SV01" (điểm mạnh nhất) |
+| 1:15 | Mở barrier từ App → Dashboard đổi trạng thái ngay (SSE realtime) |
+| 1:40 | Dashboard tab Thống kê → biểu đồ doanh thu |
+| 1:55 | Dashboard tab Lịch sử → bảng hóa đơn + RFID |
+
+> Nhớ: Render free có thể ngủ 15 phút → lần mở đầu quay video nên "tuyên trình" trước
+> 30 giây cho server thức dậy.
