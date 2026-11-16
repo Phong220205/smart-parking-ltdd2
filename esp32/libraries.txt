@@ -3,5 +3,5 @@ PubSubClient
 ArduinoJson
 ESP32Servo
 MFRC522
-Adafruit GFX Library
 Adafruit SSD1306
+Adafruit GFX Library

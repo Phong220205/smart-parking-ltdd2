@@ -119,8 +119,8 @@ void setup(){
   pinMode(BUZZER_PIN,OUTPUT);
   barrier.attach(SERVO_PIN); barrier.write(0);
   Wire.begin(21, 22);
-  if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)){
-    Serial.println("OLED khong thay 0x3C");
+  if(!display.begin(SSD1306_EXTERNALVCC, SCREEN_ADDRESS)){
+    Serial.println("OLED INIT FAIL - check DATA=D21 CLK=D22 VCC=3V3");
     for(;;) delay(100);
   }
   display.clearDisplay();
