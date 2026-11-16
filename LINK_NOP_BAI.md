@@ -6,7 +6,7 @@
 | 2 | Link github source Arduino | https://github.com/Phong220205/smart-parking-ltdd2/blob/master/esp32/parking_firmware.ino |
 | 3 | Link Wokwi | https://wokwi.com/projects/480840614046528513 (bản đã thêm đủ 5 thư viện, bấm Start là chạy; bản gốc: https://wokwi.com/projects/480840261310656513) |
 | 4 | Link source code Backend | https://github.com/Phong220205/smart-parking-ltdd2/tree/master/backend |
-| 5 | Link Server cloud | Chưa có – deploy `backend/` lên Render theo `backend/DEPLOY.md` → dán URL `https://....onrender.com/api/status` |
+| 5 | Link Server cloud | https://clear-plants-smile.loca.lt (xem web: / , API: /api/status – tunnel tạm từ máy bạn, tắt máy là mất; bản lâu dài deploy `backend/` lên Render theo `backend/DEPLOY.md`) |
 | 6 | Link Source Code App | https://github.com/Phong220205/smart-parking-ltdd2/tree/master/app (chạy: `cd app && npx expo start`, sửa host `ws://<IP-may-broker>:9001`) |
 | 7 | Link báo cáo + slide | Chưa có – xuất `docs/BaoCao_LTDD2_BaiDoXe.md` + `docs/Slide_ThuyetTrinh.md` ra docx/pptx → up Drive share Anyone → dán link |
 | 8 | Link phần mềm / video demo | Chưa có – chạy `python simulator/parking_simulator.py --mode demo` + App đặt chỗ/mở barrier, quay 3 phút up YouTube unlisted/Drive → dán link |
