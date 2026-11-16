@@ -3,87 +3,308 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Bãi Đỗ Xe Thông Minh – Web Dashboard</title>
+<title>Bãi Đỗ Xe Thông Minh – Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
-  body{font-family:Arial,sans-serif;background:#f5f6fa;margin:0;padding:20px;color:#2c3e50}
-  h1{text-align:center}
-  .badge{display:inline-block;padding:4px 14px;border-radius:14px;color:#fff;font-weight:bold}
+  *{box-sizing:border-box}
+  body{font-family:Segoe UI,Arial,sans-serif;background:#f0f2f5;margin:0;padding:16px;color:#2c3e50}
+  h1{text-align:center;margin:6px 0 2px;font-size:24px}
+  .wrap{max-width:1150px;margin:auto}
+  .badge{display:inline-block;padding:4px 14px;border-radius:14px;color:#fff;font-weight:bold;font-size:13px}
   .on{background:#2ecc71}.off{background:#e74c3c}
-  .wrap{max-width:900px;margin:auto}
-  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:16px 0}
-  .slot{border-radius:12px;padding:20px;text-align:center;color:#fff;font-weight:bold}
-  .slot small{display:block;font-weight:normal}
+  .tabs{display:flex;gap:6px;justify-content:center;margin:14px 0;flex-wrap:wrap}
+  .tabs button{padding:8px 18px;border:0;border-radius:20px;background:#dfe6e9;color:#2c3e50;font-weight:bold;cursor:pointer}
+  .tabs button.act{background:#0984e3;color:#fff}
+  .page{display:none}.page.act{display:block}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:14px 0}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:12px 0}
+  .kpi{background:#fff;border-radius:12px;padding:14px;box-shadow:0 2px 6px rgba(0,0,0,.08)}
+  .kpi b{display:block;font-size:22px;color:#0984e3}
+  .kpi small{color:#7f8c8d;font-size:12px}
+  .slot{border-radius:12px;padding:16px;text-align:center;color:#fff;font-weight:bold;position:relative}
+  .slot small{display:block;font-weight:normal;font-size:12px;opacity:.9}
+  .slot .acts{margin-top:8px;display:flex;gap:4px;justify-content:center;flex-wrap:wrap}
+  .slot .acts button{padding:5px 9px;font-size:12px}
   .free{background:#2ecc71}.busy{background:#e74c3c}.mine{background:#f1c40f;color:#333}.booked{background:#e67e22}
-  .row{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0}
-  button{padding:10px 16px;border:0;border-radius:8px;background:#0984e3;color:#fff;font-weight:bold;cursor:pointer}
-  button.gray{background:#7f8c8d}button.red{background:#d63031}
-  input,select{padding:8px;border-radius:8px;border:1px solid #b2bec3}
+  .row{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0;align-items:center}
+  button{padding:9px 15px;border:0;border-radius:8px;background:#0984e3;color:#fff;font-weight:bold;cursor:pointer;font-size:14px}
+  button:hover{filter:brightness(1.1)}
+  button.gray{background:#7f8c8d}button.red{background:#d63031}button.green{background:#00b894}button.orange{background:#e17055}
+  input,select{padding:8px;border-radius:8px;border:1px solid #b2bec3;font-size:14px}
   .card{background:#fff;border-radius:12px;padding:14px;margin-top:12px;box-shadow:0 2px 6px rgba(0,0,0,.08)}
-  #log{font-size:13px;max-height:220px;overflow:auto}
-  table{width:100%;border-collapse:collapse;font-size:14px}
-  td,th{border-bottom:1px solid #eee;padding:6px;text-align:left}
+  .card h3{margin:0 0 10px;font-size:16px;border-left:4px solid #0984e3;padding-left:8px}
+  #log{font-size:12.5px;max-height:230px;overflow:auto;font-family:Consolas,monospace}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th,td{border-bottom:1px solid #eee;padding:7px 6px;text-align:left}
+  th{background:#f8f9fa;font-size:12px;text-transform:uppercase;color:#636e72}
+  .scroll{max-height:330px;overflow:auto}
+  .note{font-size:12px;color:#636e72}
+  .tag{padding:2px 8px;border-radius:10px;font-size:11px;font-weight:bold}
+  .t-ok{background:#d4efdf;color:#1e7e34}.t-no{background:#ffe3e3;color:#c0392b}.t-wait{background:#fff3cd;color:#856404}
+  @media(max-width:760px){.kpis{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1>🅿️ BÃI ĐỖ XE THÔNG MINH</h1>
-  <div style="text-align:center"><span id="conn" class="badge off">● Đang nối...</span>
-  <div id="sum" style="margin:6px"></div></div>
-
-  <div class="card">
-    <b>Người dùng:</b> <input id="myId" value="SV01" style="width:90px">
-    <b>Backend:</b> <input id="api" value="" style="width:260px" placeholder="để trống = cùng host">
-    <button onclick="load()">Nối lại</button>
+  <div style="text-align:center">
+    <span id="conn" class="badge off">● Đang nối...</span>
+    <span id="mqtt" class="badge off" style="margin-left:6px">Broker: ?</span>
+    <div id="sum" style="margin:6px;font-size:14px;color:#555"></div>
   </div>
 
-  <div id="slots" class="grid"></div>
-
-  <div class="row">
-    <button onclick="gate('OPEN')">MỞ BARRIER</button>
-    <button class="gray" onclick="gate('CLOSE')">ĐÓNG BARRIER</button>
-    <button class="red" onclick="load()">🔄 Tải lại</button>
+  <div class="tabs">
+    <button class="act" data-tab="parking" onclick="showTab('parking')">🅿️ Sơ đồ bãi</button>
+    <button data-tab="stats" onclick="showTab('stats')">📊 Thống kê</button>
+    <button data-tab="history" onclick="showTab('history')">🧾 Lịch sử</button>
+    <button data-tab="users" onclick="showTab('users')">👤 Người dùng</button>
+    <button data-tab="settings" onclick="showTab('settings')">⚙️ Cài đặt</button>
   </div>
 
-  <div class="card"><b>Hóa đơn mới nhất</b><div id="receipts">—</div></div>
-  <div class="card"><b>Nhật ký RFID / hệ thống</b><div id="log"></div></div>
-  <div class="card"><small>Web này đọc từ Backend REST <code>/api/status</code> (Backend tự lấy từ MQTT Broker). Đặt chỗ từ web gọi <code>POST /api/booking</code> rồi Backend chuyển tiếp MQTT – đúng luật chống trùng như App.</small></div>
+  <!-- ============ TAB 1: SO DO BAI ============ -->
+  <div id="tab-parking" class="page act">
+    <div class="card">
+      <b>Điều khiển:</b>
+      <input id="myId" value="SV01" style="width:90px" placeholder="Mã user">
+      <button onclick="gate('OPEN')">🔓 MỞ BARRIER</button>
+      <button class="gray" onclick="gate('CLOSE')">🔒 ĐÓNG</button>
+      <button class="orange" onclick="enterSel()">➡️ Xác nhận xe vào</button>
+      <button class="red" onclick="exitSel()">⬅️ Xác nhận xe ra</button>
+    </div>
+    <div id="slots" class="grid"></div>
+    <div class="card">
+      <h3>Log hệ thống (realtime)</h3>
+      <div id="log"></div>
+    </div>
+  </div>
+
+  <!-- ============ TAB 2: THONG KE ============ -->
+  <div id="tab-stats" class="page">
+    <div class="kpis" id="kpis"></div>
+    <div class="card">
+      <h3>Doanh thu 7 ngần gần nhất</h3>
+      <canvas id="chartRevenue" height="110"></canvas>
+    </div>
+    <div class="card">
+      <h3>Doanh thu theo giờ trong ngày</h3>
+      <canvas id="chartHour" height="110"></canvas>
+    </div>
+    <div class="card">
+      <h3>Top người dùng</h3>
+      <canvas id="chartUsers" height="110"></canvas>
+    </div>
+  </div>
+
+  <!-- ============ TAB 3: LICH SU ============ -->
+  <div id="tab-history" class="page">
+    <div class="card">
+      <h3>Hóa đơn / tính phí</h3>
+      <div class="scroll"><table id="tblReceipts"><thead><tr><th>Ô</th><th>User</th><th>Phút</th><th>Phí</th><th>Thời gian</th></tr></thead><tbody></tbody></table></div>
+    </div>
+    <div class="card">
+      <h3>Lịch sử đặt chỗ</h3>
+      <div class="scroll"><table id="tblBookings"><thead><tr><th>Ô</th><th>User</th><th>Hành động</th><th>KQ</th><th>Thời gian</th></tr></thead><tbody></tbody></table></div>
+    </div>
+    <div class="card">
+      <h3>Log thẻ RFID</h3>
+      <div class="scroll"><table id="tblRfid"><thead><tr><th>Thẻ</th><th>Ô</th><th>Sự kiện</th><th>User</th><th>Thời gian</th></tr></thead><tbody></tbody></table></div>
+    </div>
+  </div>
+
+  <!-- ============ TAB 4: NGUOI DUNG ============ -->
+  <div id="tab-users" class="page">
+    <div class="card">
+      <h3>Đăng ký tài khoản mới</h3>
+      <div class="row">
+        <input id="rgUser" placeholder="Tên đăng nhập" style="width:150px">
+        <input id="rgPass" placeholder="Mật khẩu" type="password" style="width:130px">
+        <input id="rgName" placeholder="Họ tên" style="width:150px">
+        <input id="rgPlate" placeholder="Biển số" style="width:130px">
+        <button onclick="register()">Đăng ký</button>
+      </div>
+      <div id="regMsg" class="note"></div>
+    </div>
+    <div class="card">
+      <h3>Danh sách người dùng</h3>
+      <div class="scroll"><table id="tblUsers"><thead><tr><th>User</th><th>Tên</th><th>Biển số</th><th>Lượt xe</th><th>Chi tiêu</th></tr></thead><tbody></tbody></table></div>
+    </div>
+  </div>
+
+  <!-- ============ TAB 5: CAIDAT ============ -->
+  <div id="tab-settings" class="page">
+    <div class="card">
+      <h3>Kết nối</h3>
+      <div class="row">
+        <b>Backend API:</b> <input id="api" value="" style="width:280px" placeholder="để trống = cùng host">
+        <button onclick="load(); loadStats(); loadUsers();">🔄 Áp dụng</button>
+      </div>
+      <p class="note">Dashboard đọc từ Backend REST (<code>/api/status</code>). Backend tự lấy dữ liệu từ MQTT Broker.
+      Realtime dùng SSE (<code>/api/stream</code>) — tự kết nối lại khi rớt mạng.</p>
+      <h3>Endpoint có sẵn</h3>
+      <p class="note">
+        <code>GET /api/status</code> — sơ đồ realtime · <code>GET /api/stats</code> — thống kê doanh thu<br>
+        <code>GET /api/receipts</code> — hóa đơn · <code>GET /api/bookings</code> — đặt chỗ · <code>GET /api/rfid</code> — thẻ<br>
+        <code>POST /api/booking</code> — đặt/hủy · <code>POST /api/gate</code> — barrier · <code>POST /api/enter</code> · <code>POST /api/exit</code><br>
+        <code>POST /api/auth/register</code> · <code>POST /api/auth/login</code> · <code>GET /api/users</code> · <code>POST /api/balance</code>
+      </p>
+    </div>
+  </div>
 </div>
+
 <script>
 let base='';
-function apiBase(){ const v=document.getElementById('api').value.trim(); return v||''; }
+function apiBase(){ return document.getElementById('api').value.trim(); }
+const $ = (id)=>document.getElementById(id);
+const fmtTime = (ts)=> ts? new Date(ts).toLocaleString('vi-VN') : '-';
+const fmtMoney = (n)=> new Intl.NumberFormat('vi-VN').format(n||0)+'đ';
+
+function log(m){
+  const el=$('log');
+  el.innerHTML=`<div>${new Date().toLocaleTimeString()} ${m}</div>`+el.innerHTML;
+}
+function showTab(name){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('act'));
+  document.querySelectorAll('.tabs button').forEach(b=>b.classList.remove('act'));
+  $('tab-'+name).classList.add('act');
+  event.target.classList.add('act');
+  if(name==='stats') loadStats();
+  if(name==='users') loadUsers();
+  if(name==='history') loadHistory();
+}
+
+// --------------------------- LOAD DU LIEU ----------------------------------
 async function load(){
   base=apiBase();
   try{
     const r=await fetch(base+'/api/status'); const d=await r.json();
-    document.getElementById('conn').className='badge '+(d.online?'on':'off');
-    document.getElementById('conn').textContent=d.online?'● ONLINE':'○ OFFLINE';
-    const ids=Object.keys(d.slots); let free=ids.filter(k=>!d.slots[k].occupied).length;
-    document.getElementById('sum').textContent=`Trống ${free}/${ids.length} • Barrier: ${d.gate}`;
-    const my=document.getElementById('myId').value.trim()||'SV01';
-    document.getElementById('slots').innerHTML=ids.map(id=>{
+    $('conn').className='badge '+(d.online?'on':'off');
+    $('conn').textContent=d.online?'● Broker ONLINE':'○ Broker OFFLINE';
+    $('mqtt').className='badge '+(d.online?'on':'off');
+    $('mqtt').textContent='Backend: '+(d.online?'đang kết nối':'mất kết nối');
+    const ids=Object.keys(d.slots||{});
+    const free=ids.filter(k=>!d.slots[k].occupied).length;
+    $('sum').innerHTML=`Trống <b>${free}/${ids.length}</b> • Barrier: <b>${d.gate||'CLOSED'}</b> • Doanh thu: <b>${fmtMoney(d.revenue)}</b>`;
+    const my=$('myId').value.trim()||'SV01';
+    $('slots').innerHTML=ids.map(id=>{
       const s=d.slots[id]; let cls='free',st='TRỐNG';
       if(s.occupied){cls='busy';st='CÓ XE';}
       else if(s.reservedBy){ if(s.reservedBy===my){cls='mine';st='BẠN ĐẶT';} else {cls='booked';st='ĐÃ ĐẶT';} }
-      return `<div class="slot ${cls}">${id}<br>${st}<small>${s.reservedBy||''}</small>
-        <div style="margin-top:8px"><button onclick="book('${id}','reserve')">Đặt</button>
-        <button class="gray" onclick="book('${id}','cancel')">Hủy</button></div></div>`;
+      return `<div class="slot ${cls}">${id}<br>${st}<small>${s.reservedBy||s.currentUser||''}</small>
+        <div class="acts">
+          <button onclick="book('${id}','reserve')">Đặt</button>
+          <button class="gray" onclick="book('${id}','cancel')">Hủy</button>
+          <button class="green" onclick="enterSlot('${id}')">Vào</button>
+          <button class="red" onclick="exitSlot('${id}')">Ra</button>
+        </div></div>`;
     }).join('');
-    const r2=await fetch(base+'/api/receipts'); const rec=await r2.json();
-    document.getElementById('receipts').innerHTML=rec.length?('<table>'+rec.slice(0,5).map(x=>`<tr><td>Ô ${x.slot}</td><td>${x.minutes} phút</td><td><b>${x.fee}đ</b></td><td>${x.user||''}</td></tr>`).join('')+'</table>'):'—';
-  }catch(e){ document.getElementById('conn').className='badge off'; document.getElementById('conn').textContent='○ Mất kết nối Backend'; }
+  }catch(e){
+    $('conn').className='badge off'; $('conn').textContent='○ Mất kết nối Backend';
+  }
 }
+
+async function loadStats(){
+  try{
+    const d=await (await fetch(base+'/api/stats')).json();
+    $('kpis').innerHTML=`
+      <div class="kpi"><b>${fmtMoney(d.revenueToday)}</b><small>Doanh thu hôm nay</small></div>
+      <div class="kpi"><b>${fmtMoney(d.totalRevenue)}</b><small>Tổng doanh thu</small></div>
+      <div class="kpi"><b>${d.totalSessions}</b><small>Lượt xe ra vào</small></div>
+      <div class="kpi"><b>${d.free}/${d.total}</b><small>Ô đang trống</small></div>`;
+    const labels=d.days.map(x=>x.date.slice(5));
+    const data=d.days.map(x=>x.revenue);
+    if(window.cR) window.cR.destroy();
+    window.cR=new Chart($('chartRevenue'),{type:'bar',data:{labels,datasets:[{label:'Doanh thu (đ)',data,backgroundColor:'#0984e3'}]},
+      options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}});
+    if(window.cH) window.cH.destroy();
+    window.cH=new Chart($('chartHour'),{type:'line',data:{labels:d.byHour.map((_,i)=>i+':00'),
+      datasets:[{label:'Doanh thu theo giờ',data:d.byHour,borderColor:'#00b894',backgroundColor:'rgba(0,184,148,.2)',fill:true,tension:.35}]},
+      options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}});
+    if(window.cU) window.cU.destroy();
+    window.cU=new Chart($('chartUsers'),{type:'doughnut',
+      data:{labels:d.topUsers.map(x=>x.user),datasets:[{data:d.topUsers.map(x=>x.sessions),backgroundColor:['#0984e3','#00b894','#f1c40f','#e17055','#6c5ce7','#fd79a8','#00cec9','#e84393','#a29bfe','#636e72']}]},
+      options:{plugins:{legend:{position:'right'}}}});
+  }catch(e){ log('Loi load stats: '+e.message); }
+}
+
+async function loadHistory(){
+  try{
+    const rec=await (await fetch(base+'/api/receipts?limit=100')).json();
+    $('tblReceipts').querySelector('tbody').innerHTML = rec.length? rec.map(x=>
+      `<tr><td>${x.slot||''}</td><td>${x.user||''}</td><td>${x.minutes||0} phút</td><td><b>${fmtMoney(x.fee)}</b></td><td>${fmtTime(x.ts)}</td></tr>`).join('')
+      : '<tr><td colspan="5" style="color:#999">Chưa có hóa đơn</td></tr>';
+    const bk=await (await fetch(base+'/api/bookings?limit=100')).json();
+    $('tblBookings').querySelector('tbody').innerHTML = bk.length? bk.map(x=>
+      `<tr><td>${x.slot||''}</td><td>${x.user||''}</td><td>${x.action||''}</td>
+       <td><span class="tag ${x.ok?'t-ok':'t-no'}">${x.ok?'OK':'LOI'}</span></td><td>${fmtTime(x.ts)}</td></tr>`).join('')
+      : '<tr><td colspan="5" style="color:#999">Chưa có lịch sử</td></tr>';
+    const rf=await (await fetch(base+'/api/rfid')).json();
+    $('tblRfid').querySelector('tbody').innerHTML = rf.length? rf.map(x=>
+      `<tr><td>${x.card||''}</td><td>${x.slot||'-'}</td><td>${x.event||''}</td><td>${x.user||''}</td><td>${fmtTime(x.ts)}</td></tr>`).join('')
+      : '<tr><td colspan="5" style="color:#999">Chưa quet thẻ nào</td></tr>';
+  }catch(e){ log('Loi load history: '+e.message); }
+}
+
+async function loadUsers(){
+  try{
+    const us=await (await fetch(base+'/api/users')).json();
+    $('tblUsers').querySelector('tbody').innerHTML = us.length? us.map(u=>
+      `<tr><td>${u.username}</td><td>${u.name||''}</td><td>${u.plate||''}</td><td>${u.sessions}</td><td>${fmtMoney(u.spent)}</td></tr>`).join('')
+      : '<tr><td colspan="5" style="color:#999">Chưa có tài khoản</td></tr>';
+  }catch(e){ log('Loi load users: '+e.message); }
+}
+
+// --------------------------- HANH DONG -------------------------------------
 async function book(slot,action){
-  const my=document.getElementById('myId').value.trim()||'SV01';
-  const r=await fetch(base+'/api/booking',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slot,user:my,action,requestId:String(Date.now())})});
-  const d=await r.json(); log(`Đặt ${slot} ${action}: ${JSON.stringify(d)}`); setTimeout(load,800);
+  const my=$('myId').value.trim()||'SV01';
+  const r=await fetch(base+'/api/booking',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({slot,user:my,action,requestId:String(Date.now())})});
+  const d=await r.json(); log(`Dat ${slot} ${action} -> ${JSON.stringify(d)}`); setTimeout(load,700);
 }
 async function gate(cmd){
-  const my=document.getElementById('myId').value.trim()||'SV01';
-  await fetch(base+'/api/gate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cmd,by:my})});
-  log('Barrier '+cmd); setTimeout(load,800);
+  const my=$('myId').value.trim()||'SV01';
+  await fetch(base+'/api/gate',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({cmd,by:my,requestId:String(Date.now())})});
+  log('Barrier '+cmd); setTimeout(load,700);
 }
-function log(m){ const el=document.getElementById('log'); el.innerHTML=`<div>${new Date().toLocaleTimeString()} ${m}</div>`+el.innerHTML; }
-load(); setInterval(load,3000);
+async function enterSlot(slot){
+  const my=$('myId').value.trim()||'SV01';
+  await fetch(base+'/api/enter',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({slot,user:my,requestId:String(Date.now())})});
+  log('Xe vao '+slot); setTimeout(load,700);
+}
+async function exitSlot(slot){
+  const my=$('myId').value.trim()||'SV01';
+  await fetch(base+'/api/exit',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({slot,user:my,requestId:String(Date.now())})});
+  log('Xe ra '+slot); setTimeout(load,700);
+}
+function enterSel(){ const s=prompt('Xe vao o nao? (P1..P6)'); if(s) enterSlot(s.trim().toUpperCase()); }
+function exitSel(){ const s=prompt('Xe ra o nao? (P1..P6)'); if(s) exitSlot(s.trim().toUpperCase()); }
+async function register(){
+  const body={username:$('rgUser').value.trim(),password:$('rgPass').value,name:$('rgName').value.trim(),plate:$('rgPlate').value.trim()};
+  if(!body.username||!body.password){ $('regMsg').textContent='Thieu ten dang nhap / mat khau'; return; }
+  const r=await fetch(base+'/api/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const d=await r.json();
+  $('regMsg').innerHTML = d.ok? `<span class="tag t-ok">Đăng ký thành công</span>` : `<span class="tag t-no">${d.error}</span>`;
+  if(d.ok) loadUsers();
+}
+
+// --------------------------- SSE REALTIME ----------------------------------
+let es=null;
+function connectStream(){
+  try{ es?.close(); }catch(e){}
+  es=new EventSource(base+'/api/stream');
+  es.addEventListener('slots',()=>{ load(); });
+  es.addEventListener('gate',(e)=>{ log('Barrier '+(JSON.parse(e.data).gate||'')); load(); });
+  es.addEventListener('receipt',(e)=>{ const d=JSON.parse(e.data); log(`HOA DON ${d.slot}: ${fmtMoney(d.fee)}`); loadStats(); });
+  es.addEventListener('booking',(e)=>{ const d=JSON.parse(e.data); log(`Booking ${d.slot}: ${d.state||''}`); });
+  es.addEventListener('rfid',(e)=>{ const d=JSON.parse(e.data); log(`RFID ${d.card} ${d.event}`); });
+  es.onerror=()=>{ log('SSE mat ket noi, thu lai...'); setTimeout(connectStream,5000); };
+}
+
+load(); loadStats(); loadUsers(); connectStream();
+setInterval(load,3000);
+setInterval(()=>{ if($('tab-history').classList.contains('act')) loadHistory(); },5000);
 </script>
 </body>
 </html>

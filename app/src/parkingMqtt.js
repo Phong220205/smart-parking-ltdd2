@@ -26,8 +26,7 @@ export function connectParking(cfg, onEvent) {
       'parking/slot/+/status', 'parking/slots/snapshot', 'parking/booking/+/state',
       'parking/gate/barrier/state', 'parking/gate/rfid', 'parking/billing/receipt',
       'parking/system/heartbeat', 'parking/system/status',
-    ], { qos: 1 });
-  });
+    ], { qos: 1 });  });
   client.on('reconnect', () => onEvent('conn', false));
   client.on('close', () => onEvent('conn', false));
   client.on('error', () => onEvent('conn', false));
@@ -57,5 +56,7 @@ export function cancelSlot(client, slot, user) {
   return requestId;
 }
 export function gateCmd(client, cmd, by) {
-  client.publish('parking/gate/barrier/cmd', JSON.stringify({ cmd, by, requestId: Date.now().toString(36) }), { qos: 1 });
+  const requestId = Date.now().toString(36) + Math.random().toString(16).slice(2, 6);
+  client.publish('parking/gate/barrier/cmd', JSON.stringify({ cmd, by, requestId }), { qos: 1 });
+  return requestId;
 }

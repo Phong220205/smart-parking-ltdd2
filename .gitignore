@@ -8,4 +8,6 @@ __pycache__/
 mosquitto-data/
 mosquitto-log/
 passwd
+data/
+*.db.json
 .DS_Store
