@@ -92,6 +92,8 @@ Nếu đấu sai chân, Wokwi vẫn biên dịch và chạy bình thường (Ser
 | Chống trùng | Kiểm tra `occupied` và `reservedBy` ngay trên ESP32 trước khi nhận lệnh |
 | Lệnh Serial | `RFID:`, `BOOK:`, `CANCEL:`, `ENTER:`, `EXIT:`, `GATE:`, `DEMO` – để demo không cần App |
 | Chẩn đoán | Log chi tiết mỗi giây: `Slots: X_____ MQTT:OK DT:6000d` |
+| Chống nhiễu cảm biến | **Debounce 200 ms** cho 6 IR (3 biến: `irRaw` / `irChangeAt` / `irStable`) – loại bỏ hiện tượng bounce của nút bấm |
+| Tách trạng thái | `irShadow[6]` (cảm biến đã xác nhận) + `manualMode[6]` (ô do lệnh thủ công điều khiển) để lệnh Serial không bị vòng lặp IR ghi đè |
 
 ### 4.4 Simulator Python (thay ESP32)
 

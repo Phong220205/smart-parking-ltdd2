@@ -139,10 +139,10 @@ RFID: --
 
 ### Bug 3 – Nhiễu bounce của nút bấm (đã sửa)
 - **Hiện tượng**: bấm nút P1 trên Wokwi có thể sinh 2 cạnh (vào/ra) trong vài chục ms → hóa đơn rác.
-- **Sửa**: thêm **bộ lọc debounce 300 ms** cho cảm biến IR:
+- **Sửa**: thêm **bộ lọc debounce 200 ms** cho cảm biến IR:
   - `irRaw[6]` – tín hiệu thô, đọc mỗi 50 ms.
   - `irChangeAt[6]` – mốc thời gian thay đổi.
-  - `irStable[6]` – tín hiệu đã ổn định ≥ 300 ms mới được chấp nhận.
+  - `irStable[6]` – tín hiệu đã ổn định ≥ 200 ms mới được chấp nhận.
 - Đây là kỹ thuật **chống nhiễu cảm biến** đáng đưa vào phần "xử lý lỗi" của báo cáo.
 
 ### Bug 4 – Token đăng nhập không verify được (đã sửa)
