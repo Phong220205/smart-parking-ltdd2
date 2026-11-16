@@ -554,7 +554,7 @@ app.get("/api/bridge", (req, res) => res.json({
   path: BRIDGE_PATH,
   broker: embeddedBroker ? "embedded-aedes" : MQTT_URL,
   mode: embeddedBroker ? "embedded" : "proxy",
-  ...(bridge ? bridge.stats() : {}),
+  ...(bridge ? bridge.stats() : { clients: 0, subscriptions: [] }),
   ...(embeddedBroker ? { embedded: embeddedBroker.stats() } : {}),
 }));
 

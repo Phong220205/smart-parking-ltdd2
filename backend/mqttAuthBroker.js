@@ -232,8 +232,11 @@ export function createAuthBroker({ tcpPort = 1883, wsPort = 9001, onLog = () => 
     },
     stats() {
       return {
-        clients: Object.keys(aedes.clients).length,
-        subscriptions: Object.keys(aedes.subscriptions).length,
+        clients: Object.keys(aedes.clients || {}).length,
+        // aedes 0.5x không lưu danh sách subscription tập trung
+        // (mỗi client giữ riêng), nên chỉ đếm số client đang kết nối.
+        subscriptions: Object.values(aedes.clients || {})
+          .reduce((n, c) => n + Object.keys(c?.subscriptions || {}).length, 0),
         tcpPort,
         wsPath: "/mqtt",
       };
