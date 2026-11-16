@@ -12,17 +12,6 @@ jobs:
     name: Kiem thu end-to-end (36 checkpoint)
     runs-on: ubuntu-latest
 
-    services:
-      mosquitto:
-        image: eclipse-mosquitto:2.0
-        ports:
-          - 1883:1883
-        options: >-
-          --health-cmd "mosquitto_sub -h localhost -p 1883 -t 'health' -C 1 -W 3 || exit 1"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     env:
       MQTT_USER: ""
       MQTT_PASS: ""
@@ -62,6 +51,22 @@ jobs:
         working-directory: backend
         run: node --check server.js
 
+      - name: Kiem tra JSON + ACL broker
+        run: |
+          python -c "import json; json.load(open('esp32/diagram.json')); print('diagram.json OK')"
+          test -f broker/acl.conf && echo "ACL OK"
+
+      - name: Bat broker Mosquitto
+        run: |
+          docker run -d --name parking-mosquitto-ci \
+            -p 1883:1883 -p 9001:9001 \
+            -v "$PWD/broker/config/ci-mosquitto.conf:/mosquitto/config/mosquitto.conf:ro" \
+            eclipse-mosquitto:2.0
+          for i in $(seq 1 20); do
+            if docker exec parking-mosquitto-ci mosquitto_sub -h localhost -p 1883 -t 'health' -C 1 -W 2; then break; fi
+            sleep 1
+          done
+
       - name: Bat backend
         run: |
           cd backend
@@ -76,10 +81,11 @@ jobs:
       - name: Chay bo kiem thu tu dong
         run: python simulator/test_suite.py
 
-      - name: Dung backend
+      - name: Dung backend + broker
         if: always()
         run: |
           if [ -f backend.pid ]; then kill "$(cat backend.pid)" || true; fi
+          docker rm -f parking-mosquitto-ci || true
 
       - name: Luu log backend
         if: always()
