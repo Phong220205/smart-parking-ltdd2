@@ -17,6 +17,18 @@ jobs:
         image: eclipse-mosquitto:2.0
         ports:
           - 1883:1883
+        options: >-
+          --health-cmd "mosquitto_sub -h localhost -p 1883 -t 'health' -C 1 -W 3 || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      MQTT_USER: ""
+      MQTT_PASS: ""
+      MQTT_HOST: localhost
+      MQTT_PORT: "1883"
+      PARKING_API: http://localhost:3000
 
     steps:
       - name: Checkout
@@ -41,7 +53,6 @@ jobs:
 
       - name: Kiem tra syntax firmware (Arduino)
         run: |
-          # Firmware .ino chay tren Wokwi - kiem tra bang regex co ban cho cac ky tu can thiet
           grep -q "void setup()" esp32/parking_firmware.ino
           grep -q "void loop()" esp32/parking_firmware.ino
           grep -q "PubSubClient" esp32/parking_firmware.ino
@@ -56,7 +67,10 @@ jobs:
           cd backend
           nohup node server.js > ../backend_ci.log 2>&1 &
           echo $! > ../backend.pid
-          sleep 5
+          for i in $(seq 1 20); do
+            if curl -sf http://localhost:3000/api/health > /dev/null; then break; fi
+            sleep 1
+          done
           curl -s http://localhost:3000/api/health
 
       - name: Chay bo kiem thu tu dong
@@ -92,8 +106,4 @@ jobs:
 
       - name: Kiem tra syntax JSX
         working-directory: app
-        run: |
-          npx --yes @babel/parser --plugins jsx src/App.js > /dev/null
-          npx --yes @babel/parser src/api.js > /dev/null
-          npx --yes @babel/parser src/parkingMqtt.js > /dev/null
-          echo "App source OK"
+        run: node scripts/checkSyntax.js

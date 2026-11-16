@@ -16,9 +16,11 @@ import atexit
 import urllib.request
 import urllib.error
 
-BASE = "http://localhost:3000"
-MQTT_HOST = "localhost"
-MQTT_PORT = 1883
+BASE = os.environ.get("PARKING_API", "http://localhost:3000")
+MQTT_HOST = os.environ.get("MQTT_HOST", "localhost")
+MQTT_PORT = int(os.environ.get("MQTT_PORT", "1883"))
+MQTT_USER = os.environ.get("MQTT_USER", "app")
+MQTT_PASS = os.environ.get("MQTT_PASS", "app123")
 SIM_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "parking_simulator.py")
 UNIQ = str(int(time.time()))[-6:]
 
@@ -76,7 +78,8 @@ def mqtt_subscribe(topics):
         return None, None
     msgs = []
     c = mqtt.Client(client_id=f"test-suite-{int(time.time()*1000) % 999999}")
-    c.username_pw_set("app", "app123")
+    if MQTT_USER:
+        c.username_pw_set(MQTT_USER, MQTT_PASS)
     c.on_message = lambda cl, u, m: msgs.append((m.topic, json.loads(m.payload.decode())))
     c.connect(MQTT_HOST, MQTT_PORT, 30)
     c.loop_start()
@@ -96,10 +99,30 @@ def wait_for(msgs, request_id, timeout=6.0):
     return None
 
 
+def kill_other_simulators():
+    """Dung moi simulator dang chay (cross-platform: Windows / Linux)."""
+    try:
+        if os.name == "nt":
+            subprocess.run(
+                ["powershell", "-NoProfile", "-Command",
+                 "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | "
+                 "Where-Object { $_.CommandLine -like '*parking_simulator.py*' } | "
+                 "ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"],
+                capture_output=True)
+        else:
+            subprocess.run(["pkill", "-f", "parking_simulator.py"], capture_output=True)
+    except Exception:
+        pass
+
+
 def start_simulator():
     """Khoi dong simulator o quiet mode de test khong bi nhieu du lieu."""
+    cmd = [sys.executable, SIM_SCRIPT, "--mode", "quiet",
+           "--client-id", f"sim-test-{os.getpid()}"]
+    if not MQTT_USER:
+        cmd.append("--no-auth")
     proc = subprocess.Popen(
-        [sys.executable, SIM_SCRIPT, "--mode", "quiet"],
+        cmd,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         stdin=subprocess.DEVNULL,
     )
@@ -126,12 +149,7 @@ def main():
     print("=" * 68)
 
     # Bat simulator quiet rieng cho test (tat simulator cu neu dang chay)
-    subprocess.run(
-        ["powershell", "-NoProfile", "-Command",
-         "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | "
-         "Where-Object { $_.CommandLine -like '*parking_simulator.py*' } | "
-         "ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"],
-        capture_output=True)
+    kill_other_simulators()
     time.sleep(1)
     sim = start_simulator()
     atexit.register(stop_simulator, sim)

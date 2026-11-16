@@ -37,9 +37,8 @@ app.use((req, res, next) => {
 });
 
 const MQTT_URL  = process.env.MQTT_URL  || "mqtt://localhost:1883";
-const MQTT_USER = process.env.MQTT_USER || "esp32";
-const MQTT_PASS = process.env.MQTT_PASS || "esp32123";
-const PORT      = process.env.PORT      || 3000;
+const MQTT_USER = process.env.MQTT_USER === undefined ? "esp32" : process.env.MQTT_USER;
+const MQTT_PASS = process.env.MQTT_PASS === undefined ? "esp32123" : process.env.MQTT_PASS;const PORT      = process.env.PORT      || 3000;
 const DATA_FILE = process.env.DATA_FILE || path.join(__dirname, "..", "data", "parking.json");
 const SECRET    = process.env.JWT_SECRET || "smart-parking-ltdd2-secret";
 const ADMIN_PW  = process.env.ADMIN_PASS || "admin123";
@@ -183,7 +182,10 @@ app.get("/api/stream", (req, res) => {
 
 // ============================ MQTT ==========================================
 const mc = mqtt.connect(MQTT_URL, {
-  username: MQTT_USER, password: MQTT_PASS, reconnectPeriod: 2000,
+  username: MQTT_USER || undefined, password: MQTT_PASS || undefined,
+  reconnectPeriod: 2000,
+  clientId: `backend-${process.pid}-${Date.now().toString(36)}`,
+  clean: true,
 });
 mc.on("connect", () => {
   console.log("[MQTT] Backend connected", MQTT_URL);

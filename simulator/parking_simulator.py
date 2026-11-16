@@ -41,14 +41,20 @@ parser.add_argument("--host", default="localhost")
 parser.add_argument("--port", type=int, default=1883)
 parser.add_argument("--user", default="esp32")
 parser.add_argument("--password", default="esp32123")
+parser.add_argument("--no-auth", action="store_true",
+                    help="Khong gui username/password (dung cho broker cho phep anonymous)")
 parser.add_argument("--mode", default="demo", choices=["demo", "quiet", "chaos"])
 parser.add_argument("--seed", type=int, default=None, help="Dat random seed de chay lap lai")
+parser.add_argument("--client-id", default=None,
+                    help="Client ID cung cho MQTT. Client moi se duoc broker kick client cu cung ID")
 args = parser.parse_args()
 if args.seed is not None:
     random.seed(args.seed)
 
-client = mqtt.Client(client_id=f"sim-esp32-{random.randint(0, 99999)}", protocol=mqtt.MQTTv311)
-client.username_pw_set(args.user, args.password)
+client = mqtt.Client(client_id=args.client_id or f"sim-esp32-{random.randint(0, 99999)}",
+                      protocol=mqtt.MQTTv311)
+if args.user and args.password and not args.no_auth:
+    client.username_pw_set(args.user, args.password)
 client.will_set("parking/system/status", json.dumps({"online": False}), qos=1, retain=True)
 
 
