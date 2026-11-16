@@ -4,7 +4,7 @@
 |---|---|---|
 | 1 | Link Github Project | https://github.com/Phong220205/smart-parking-ltdd2 |
 | 2 | Link github source Arduino | https://github.com/Phong220205/smart-parking-ltdd2/blob/master/esp32/parking_firmware.ino |
-| 3 | Link Wokwi | Chưa có – mở https://wokwi.com → New ESP32 → copy `esp32/diagram.json` + `esp32/parking_firmware.ino` → Share → dán link vào đây |
+| 3 | Link Wokwi | https://wokwi.com/projects/480840261310656513 |
 | 4 | Link source code Backend | https://github.com/Phong220205/smart-parking-ltdd2/tree/master/backend |
 | 5 | Link Server cloud | Chưa có – deploy `backend/` lên Render theo `backend/DEPLOY.md` → dán URL `https://....onrender.com/api/status` |
 | 6 | Link Source Code App | https://github.com/Phong220205/smart-parking-ltdd2/tree/master/app (chạy: `cd app && npx expo start`, sửa host `ws://<IP-may-broker>:9001`) |
