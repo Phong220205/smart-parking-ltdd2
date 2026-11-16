@@ -57,6 +57,15 @@
 #include <MFRC522.h>
 #include <time.h>          // [N3] dùng cho đồng hồ thực tế (NTP)
 
+// --- [N1] MQTT qua WebSocket (wss://) ---
+// PubSubClient nói chuyện TCP thuần. Để nối tới broker cloud (Render chỉ mở
+// cổng HTTPS), ta bọc một lớp WebSocketClient -> WebSocketStreamClient
+// (lớp này implements Client.h mà PubSubClient yêu cầu) -> nhờ vậy PubSubClient
+// vẫn dùng API quen thuộc mà đường truyền là wss:// (đã MÃ HOÁ).
+#include <ArduinoHttpClient.h>
+#include <WebSocketClient250.h>
+#include <WebSocketStreamClient.h>
+
 // --- [N4] Watchdog Timer chuẩn của ESP32 (task WDT của ESP-IDF) ---
 // Dùng header có sẵn trong Arduino ESP32 core. Guard bằng __has_include để
 // firmware vẫn biên dịch được trên môi trường thiếu header này.
@@ -73,9 +82,23 @@ const char* WIFI_SSID = "Wokwi-GUEST";   // tên mạng WiFi (Wokwi cấp sẵn,
 const char* WIFI_PASS = "";
 
 // --- MQTT Broker ---
-// Mặc định trỏ tới broker CỤC BỘ của đồ án (docker-compose trong thư mục broker/)
-// -> broker bắt buộc đăng nhập theo ACL, nên phải có MQTT_USER / MQTT_PASS.
-const char* MQTT_HOST = "test.mosquitto.org";
+// [N1] Broker của đồ án được deploy trên cloud (Render) và CÓ xác thực
+//      user/password + ACL phân quyền topic (xem backend/mqttAuthBroker.js).
+//
+//      VÌ SAO DÙNG ĐƯỜNG DẪN "/mqtt" (MQTT-over-WebSocket) MÀ KHÔNG PHẢI ":1883"?
+//        - Nền tảng deploy chỉ mở được cổng HTTP/HTTPS công khai, cổng TCP
+//          1883 không truy cập được từ bên ngoài.
+//        - Cổng HTTPS có sẵn hỗ trợ WebSocket -> ta đưa MQTT đi trên WS.
+//        - Ưu điểm thêm: kết nối đi qua HTTPS nên dữ liệu được MÃ HOÁ
+//          (đáp ứng tiêu chí "mã hoá" của Lab 2).
+//
+//      Muốn chạy với broker Mosquitto cục bộ (Docker trong thư mục broker/)?
+//      -> Đổi MQTT_HOST thành IP máy tính (vd "192.168.1.100") và
+//         MQTT_USE_WS thành 0. Broker cục bộ mở cổng TCP 1883.
+const char* MQTT_HOST = "smart-parking-ltdd2.onrender.com";
+const char* MQTT_PATH = "/mqtt";         // đường dẫn WebSocket của broker
+#define MQTT_USE_WS  1                   // 1 = dùng MQTT-over-WebSocket (cloud)
+                                       // 0 = dùng MQTT/TCP trực tiếp (cục bộ)
 
 // [N1] Tài khoản MQTT (đúng với file broker/config/passwd của Lab 2).
 //      Muốn nối broker công cộng cho phép anonymous thì để rỗng cả hai: "" / ""
@@ -85,7 +108,7 @@ const char* MQTT_PASS = "esp32123";
 // --- Mã hoá SSL/TLS (Lab 2 - tiêu chí "mã hoá") ---
 // Bật SSL/TLS: đổi sang broker có mở cổng 8883 (MQTT/TLS)
 // Chi tiết: broker/config/mosquitto.conf + broker/make_certs.py
-#define MQTT_USE_TLS  0          // 1 = bật SSL/TLS
+#define MQTT_USE_TLS  1          // 1 = bật SSL/TLS (wss:// khi dùng WebSocket)
 #define MQTT_TLS_PORT 8883       // cổng MQTT/TLS của broker
 // CA certificate để xác thực chứng thư broker.
 // nội dung nỡ mã để copy CA (xem broker/config/certs/ca.crt)
@@ -119,9 +142,23 @@ const int BUZZER_PIN = 2;     // chân còi báo
 #define GATE_OPEN_MS      5000UL  // barrier tự đóng sau 5 giây
 
 // ================================ BIẾN TOÀN CỤC =============================
-WiFiClient espClient;              // kết nối TCP thường cho MQTT
-WiFiClientSecure espSecureClient;  // kết nối TLS cho MQTT
-PubSubClient mqtt(espClient);      // client MQTT
+WiFiClient espClient;              // kết nối TCP thường cho MQTT (chế độ local)
+WiFiClientSecure espSecureClient;  // kết nối TLS cho MQTT (chế độ local + wss)
+
+// --- [N1] Lớp bọc MQTT qua WebSocket ---
+// WebSocketClient       : bắt tay WebSocket + mã hoá TLS (nếu dùng wss://)
+// WebSocketStreamClient : biến WebSocket thành "Client" cho PubSubClient
+// PubSubClient          : vẫn dùng API connect/subscribe/publish như bình thường
+#if MQTT_USE_WS
+  // WebSocketClient250 : lớp WebSocket của thư viện WebSocketStreamClient
+  //                      (hỗ trợ cả ws:// và wss:// trên ESP32)
+  // WebSocketStreamClient: biến WebSocket thành "Client" mà PubSubClient dùng được
+  WebSocketClient250 wsClient(espSecureClient, MQTT_HOST, 443);
+  WebSocketStreamClient wsStreamClient(wsClient, MQTT_PATH);
+  PubSubClient mqtt(wsStreamClient);
+#else
+  PubSubClient mqtt(espClient);
+#endif
 Servo barrier;                    // servo điều khiển cổng
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 MFRC522 rfid(RFID_SS, RFID_RST);  // đầu đọc thẻ RFID
@@ -758,18 +795,42 @@ void setup() {
   }
 
   // --- Cấu hình client MQTT ---
+#if MQTT_USE_WS
+  // Chế độ WebSocket: địa chỉ broker đã nằm trong WebSocketClient250,
+  // nên không cần (và không được) gọi mqtt.setServer() cho chế độ này.
+  // Thay vào đó ta MỞ kết nối WebSocket tới đường dẫn /mqtt.
+  wsClient.begin(MQTT_PATH);
+  Serial.print("[MQTT] Ket noi WebSocket ");
+  Serial.print(MQTT_HOST);
+  Serial.print(MQTT_PATH);
+  Serial.println(" ...");
+#else
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
+#endif
   mqtt.setCallback(onMsg);
   mqtt.setBufferSize(2048);
   mqtt.setKeepAlive(30);          // timeout 30s -> broker tự ngắt nếu ESP32 im lặng
   mqtt.setSocketTimeout(5);       // không chờ socket quá 5s khi mạng chậm
+#if MQTT_USE_WS
+  // [N1] Đường truyền = wss:// (TLS + WebSocket) -> dữ liệu được mã hoá.
+#if MQTT_USE_CA
+  espSecureClient.setCACert(MQTT_CA);   // có nhúng CA -> xác thực chứng thư broker
+#else
+  espSecureClient.setInsecure();        // Wokwi: chưa nhúng CA -> bỏ xác thực chữ ký
+#endif
+  espSecureClient.setHandshakeTimeout(10000);
+  // Broker cloud dùng chứng thư hợp lệ (Let's Encrypt) nên không cần
+  // nhúng CA riêng. Vòng loop() sẽ tự gọi mqttTryConnect() lại mỗi 3 giây
+  // nếu kết nối rớt -> tự phục hồi.
+#else
 #if MQTT_USE_TLS
-  // Bật SSL/TLS cho MQTT + xác thực chứng thư broker bằng CA
+  // Chế độ local: MQTT/TCP + TLS tới cổng 8883 của broker Mosquitto
   mqtt.setTransport(espSecureClient, true);
 #if MQTT_USE_CA
   espSecureClient.setCACert(MQTT_CA);
 #else
-  espSecureClient.setInsecure();   // Wokwi: chưa nhúng CA -> bỏ xác thực chữ ký
+  espSecureClient.setInsecure();
+#endif
 #endif
 #endif
   // CHỈ thử MQTT khi đã có mạng. Gọi mqtt.connect() khi chưa có IP sẽ làm

@@ -20,6 +20,7 @@ import crypto from "crypto";
 import http from "http";
 import { fileURLToPath } from "url";
 import { createMqttWsBridge } from "./mqttWsBridge.js";
+import { createAuthBroker } from "./mqttAuthBroker.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -184,14 +185,46 @@ app.get("/api/stream", (req, res) => {
 });
 
 // ============================ MQTT ==========================================
-const mc = mqtt.connect(MQTT_URL, {
+// [LAB2 - Bảo mật & phân quyền] Backend có thể TỰ LÀM BROKER MQTT có xác thực.
+// Lý do: broker Mosquitto (Docker) chỉ mở cổng TCP, mà nền tảng deploy
+// (Render) chỉ expose được cổng HTTP công khai. Nên ta nhúng broker aedes
+// vào chính tiến trình backend và expose nó qua MQTT-over-WebSocket (/mqtt).
+// -> ESP32 (Wokwi) và App (React Native) cùng dùng broker này, CÓ user/pass
+//    và ACL phân quyền theo topic (đúng tiêu chí "Bảo mật và phân quyền").
+const EMBED_BROKER = process.env.EMBED_BROKER === "true";
+const EMBED_TCP_PORT = parseInt(process.env.EMBED_BROKER_PORT || "1883", 10);
+const EMBED_WS_PORT = parseInt(process.env.EMBED_BROKER_WS_PORT || "9001", 10);
+
+let embeddedBroker = null;
+const authEvents = [];   // nhật ký các lần đăng nhập (minh chứng cho báo cáo)
+
+if (EMBED_BROKER) {
+  embeddedBroker = createAuthBroker({
+    tcpPort: EMBED_TCP_PORT,
+    wsPort: EMBED_WS_PORT,
+    onLog: (m) => console.log(m),
+    onAuth: (e) => {
+      authEvents.push({ ...e, at: Date.now() });
+      if (authEvents.length > 100) authEvents.shift();
+    },
+  });
+  console.log("[BROKER] Broker MQTT noi bo da bat - co xac thuc user/pass + ACL");
+}
+
+// Kết nối MQTT của backend: nếu có broker nội bộ thì nối vào chính nó,
+// ngược lại nối broker ngoài theo MQTT_URL.
+const MQTT_TARGET = EMBED_BROKER
+  ? `mqtt://127.0.0.1:${EMBED_TCP_PORT}`
+  : MQTT_URL;
+
+const mc = mqtt.connect(MQTT_TARGET, {
   username: MQTT_USER || undefined, password: MQTT_PASS || undefined,
   reconnectPeriod: 2000,
   clientId: `backend-${process.pid}-${Date.now().toString(36)}`,
   clean: true,
 });
 mc.on("connect", () => {
-  console.log("[MQTT] Backend connected", MQTT_URL);
+  console.log("[MQTT] Backend connected", MQTT_TARGET);
   mc.subscribe([
     "parking/slot/+/status",
     "parking/slots/snapshot",
@@ -496,18 +529,41 @@ app.get("/api/health/deep", (req, res) => {
 // App React Native chi noi duoc MQTT qua WebSocket. Bridge nay lam proxy:
 //   App --wss://<server>/mqtt--> BRIDGE --mqtt://<broker>--> Broker
 // => App chi can 1 duong dan HTTPS, khong phai mo port broker public.
+//
+// [LAB2] Khi co broker noi bo (EMBED_BROKER=true), ta KHONG dung proxy:
+// /mqtt tro thang vao broker aedes -> client duoc xac thuc + ACL that
+// (khong qua trung gian). App/ESP32 phai gui user/pass khi ket noi.
 const BRIDGE_PATH = process.env.MQTT_WS_PATH || "/mqtt";
-const bridge = createMqttWsBridge({
-  mqtt,
-  path: BRIDGE_PATH,
-  brokerUrl: MQTT_URL,
-  username: MQTT_USER || undefined,
-  password: MQTT_PASS || undefined,
-  onLog: (m) => console.log(m),
-});
+const bridge = EMBED_BROKER
+  ? null
+  : createMqttWsBridge({
+      mqtt,
+      path: BRIDGE_PATH,
+      brokerUrl: MQTT_TARGET,
+      username: MQTT_USER || undefined,
+      password: MQTT_PASS || undefined,
+      onLog: (m) => console.log(m),
+    });
 
 // GET /api/bridge - thong tin trang thai bridge (App + GV xem duoc)
-app.get("/api/bridge", (req, res) => res.json({ ok: true, path: BRIDGE_PATH, ...bridge.stats() }));
+app.get("/api/bridge", (req, res) => res.json({
+  ok: true,
+  path: BRIDGE_PATH,
+  broker: embeddedBroker ? "embedded-aedes" : MQTT_URL,
+  mode: embeddedBroker ? "embedded" : "proxy",
+  ...(bridge ? bridge.stats() : {}),
+  ...(embeddedBroker ? { embedded: embeddedBroker.stats() } : {}),
+}));
+
+// GET /api/broker/auth-log - NHẬT KÝ xác thực của broker (minh chứng Lab 2)
+// Giảng viên / sinh viên xem được ai đã đăng nhập, đúng hay sai mật khẩu,
+// và topic nào bị ACL chặn -> dùng làm bằng chứng cho tiêu chí "bảo mật".
+app.get("/api/broker/auth-log", (req, res) => res.json({
+  ok: true,
+  embedded: EMBED_BROKER,
+  users: embeddedBroker ? embeddedBroker.users : [],
+  events: authEvents.slice(-50).reverse(),
+}));
 
 // 404 JSON cho API
 app.use("/api", (req, res) => res.status(404).json({ ok: false, error: "Khong tim thay endpoint" }));
@@ -523,13 +579,16 @@ app.get("/", (req, res) => res.sendFile(path.join(__dirname, "public", "index.ht
 app.use(express.static(path.join(__dirname, "public")));
 
 const server = http.createServer(app);
-bridge.handleUpgrade(server);
+// Khi co broker noi bo -> /mqtt tro thang vao broker (co xac thuc + ACL)
+// Khi khong co -> /mqtt la proxy sang broker ngoai
+if (embeddedBroker) embeddedBroker.handleUpgrade(server, BRIDGE_PATH);
+else bridge.handleUpgrade(server);
 
 server.listen(PORT, () => {
   console.log("=========================================");
   console.log(" Backend Smart Parking");
   console.log(" HTTP : http://localhost:" + PORT);
-  console.log(" MQTT : " + MQTT_URL);
+  console.log(" MQTT : " + MQTT_TARGET + (embeddedBroker ? "  (broker noi bo)" : ""));
   console.log(" WS   : ws://localhost:" + PORT + BRIDGE_PATH + "  (MQTT over WebSocket)");
   console.log(" DATA : " + DATA_FILE);
   console.log("=========================================");

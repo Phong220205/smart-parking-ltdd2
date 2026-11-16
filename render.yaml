@@ -33,15 +33,25 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "20.11.1"
-      # Broker có xác thực do chính dự án Render quản lý (dịch vụ #2).
-      # Khi dùng broker công cộng thì đổi thành mqtt://test.mosquitto.org:1883
-      # và để MQTT_USER / MQTT_PASS rỗng.
+      # Broker MQTT dùng chung cho toàn hệ thống.
+      # - Backend trên Render tự chạy broker nội bộ (aedes) có xác thực +
+      #   ACL phân quyền (xem backend/mqttAuthBroker.js), và expose nó ra
+      #   ngoài qua MQTT-over-WebSocket tại /mqtt (wss://.../mqtt).
+      # - ESP32 (Wokwi) và App (React Native) đều dùng chung broker này.
+      # - Biến dưới đây dùng cho trường hợp chạy backend riêng lẻ (không
+      #   bật broker nội bộ) - khi đó điền broker thật của nhóm.
       - key: MQTT_URL
-        value: mqtt://smart-parking-broker.onrender.com:1883
+        value: mqtt://test.mosquitto.org:1883
       - key: MQTT_USER
         value: esp32
       - key: MQTT_PASS
         value: esp32123
+      - key: EMBED_BROKER
+        value: "true"
+      - key: EMBED_BROKER_PORT
+        value: "1883"
+      - key: EMBED_BROKER_WS_PORT
+        value: "9001"
       - key: MQTT_WS_PATH
         value: /mqtt
       - key: JWT_SECRET
@@ -50,21 +60,3 @@ services:
         value: admin123
       - key: DATA_FILE
         value: /tmp/parking.json
-
-  # --------------------------------------------------------------------------
-  # 2) MQTT BROKER (Mosquitto) - CÓ xác thực user/pass + ACL phân quyền
-  #    Dùng Docker image chính thức eclipse-mosquitto:2.0
-  # --------------------------------------------------------------------------
-  - type: worker
-    name: smart-parking-broker
-    runtime: docker
-    plan: free
-    dockerfilePath: ./broker/Dockerfile
-    dockerContext: ./broker
-    envVars:
-      - key: MOSQ_HOST
-        value: smart-parking-broker.onrender.com
-      - key: MOSQ_PORT
-        value: "1883"
-      - key: MOSQ_WS_PORT
-        value: "9001"
