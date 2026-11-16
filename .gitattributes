@@ -1,0 +1,28 @@
+# ============================================================================
+#  .gitattributes - ÉP ĐÚNG KIỂU XUỐNG DÒNG CHO TỪNG LOẠI FILE
+#  ---------------------------------------------------------------------------
+#  Vì sao cần file này?
+#    - Ta phát triển trên Windows (Git mặc định chuyển LF -> CRLF khi checkout).
+#    - Script shell (broker/entrypoint.sh) chạy trong Linux/Docker. Nếu file
+#      bị CRLF thì bash báo lỗi: "/entrypoint.sh: no such file or directory".
+#    -> Bắt buộc file .sh luôn dùng LF trong repo.
+# ============================================================================
+
+# Script shell -> LUÔN LUÔN LF, không bao giờ CRLF
+*.sh text eol=lf
+
+# File cấu hình Mosquitto -> LF
+*.conf text eol=lf
+acl.conf text eol=lf
+passwd text eol=lf
+
+# Firmware Arduino -> giữ LF (Wokwi yêu cầu LF)
+*.ino text eol=lf
+
+# File văn bản thường -> LF
+*.md text eol=lf
+*.py text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf

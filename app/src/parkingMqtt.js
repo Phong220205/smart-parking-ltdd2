@@ -20,11 +20,21 @@ export const DEFAULT_CFG = {
   myId: 'SV01',
   mode: 'bridge',           // 'bridge' = ws(s)://host/mqtt  |  'broker' = ws://broker:9001
   brokerWs: '',             // chỉ dùng khi mode = 'broker'
+  brokerUser: 'app',        // user/password broker (ACL phân quyền)
+  brokerPass: 'app123',
+  brokerTls: false,         // true = dùng wss:// (ma hoá SSL/TLS) thay vì ws://
+  rejectUnauthorized: true, // xác thực chứng thư CA của broker
 };
 
 // Suy ra địa chỉ MQTT WebSocket từ cấu hình
 export function resolveMqttUrl(cfg) {
-  if (cfg.mode === 'broker' && cfg.brokerWs) return cfg.brokerWs.trim();
+  if (cfg.mode === 'broker' && cfg.brokerWs) {
+    let u = cfg.brokerWs.trim();
+    // Bật TLS -> ép scheme wss:// (giữ nguyên host:port)
+    if (cfg.brokerTls && u.startsWith('ws://')) u = 'wss://' + u.slice(5);
+    if (cfg.brokerTls && u.startsWith('http://')) u = 'wss://' + u.slice(7);
+    return u;
+  }
   const base = (cfg.base || '').trim().replace(/\/$/, '');
   if (!base) return '';
   const u = base.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:');
@@ -48,12 +58,21 @@ export async function saveCfg(c) { await AsyncStorage.setItem('parking_cfg', JSO
 // onEvent(type, data): status | snapshot | bookingState | gate | rfid | receipt | conn
 export function connectParking(cfg, onEvent) {
   const url = resolveMqttUrl(cfg);
-  const client = mqtt.connect(url, {
-    username: undefined, password: undefined,
+  // Khi noi thang toi broker: can user/pass theo ACL + tuy chon TLS
+  const direct = cfg.mode === 'broker' && !!cfg.brokerWs;
+  const opts = {
     reconnectPeriod: 2000, connectTimeout: 8000,
     clientId: 'app-' + cfg.myId + '-' + Math.random().toString(16).slice(2, 6),
     protocolVersion: 4,
-  });
+  };
+  if (direct) {
+    opts.username = cfg.brokerUser || undefined;
+    opts.password = cfg.brokerPass || undefined;
+    if (cfg.brokerTls) {
+      opts.rejectUnauthorized = cfg.rejectUnauthorized !== false;
+    }
+  }
+  const client = mqtt.connect(url, opts);
   client.on('connect', () => {
     onEvent('conn', true);
     client.subscribe([

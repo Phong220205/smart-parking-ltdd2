@@ -9,14 +9,16 @@ on:
 
 jobs:
   test:
-    name: Kiem thu end-to-end (36 checkpoint)
+    name: Kiem thu end-to-end (39 checkpoint)
     runs-on: ubuntu-latest
 
     env:
-      MQTT_USER: ""
-      MQTT_PASS: ""
+      # Broker local dung xac thuc user/pass (xem broker/config/passwd)
+      MQTT_USER: esp32
+      MQTT_PASS: esp32123
       MQTT_HOST: localhost
       MQTT_PORT: "1883"
+      BROKER_HOST: 127.0.0.1
       PARKING_API: http://localhost:3000
 
     steps:
@@ -38,34 +40,55 @@ jobs:
         run: npm ci
 
       - name: Cai dat phu thuoc Python
-        run: pip install paho-mqtt
+        run: pip install paho-mqtt cryptography
 
       - name: Kiem tra syntax firmware (Arduino)
         run: |
           grep -q "void setup()" esp32/parking_firmware.ino
           grep -q "void loop()" esp32/parking_firmware.ino
           grep -q "PubSubClient" esp32/parking_firmware.ino
+          grep -q "MQTT_USE_TLS" esp32/parking_firmware.ino
           echo "Firmware OK"
 
       - name: Kiem tra syntax backend
         working-directory: backend
-        run: node --check server.js
+        run: |
+          node --check server.js
+          node --check mqttWsBridge.js
 
       - name: Kiem tra JSON + ACL broker
         run: |
           python -c "import json; json.load(open('esp32/diagram.json')); print('diagram.json OK')"
           test -f broker/acl.conf && echo "ACL OK"
+          test -f broker/config/mosquitto.conf && echo "Mosquitto config OK"
 
-      - name: Bat broker Mosquitto
+      - name: Sinh chung thu TLS (Lab2 - ma hoa)
+        run: python broker/make_certs.py
+
+      - name: Tao file passwd cho broker (xac thuc user/pass)
         run: |
+          # File passwd KHONG commit len GitHub (security) -> CI tu sinh.
+          docker run --rm -v "$PWD/broker/config:/work" \
+            eclipse-mosquitto:2.0 mosquitto_passwd -b -c /work/passwd esp32 esp32123
+          docker run --rm -v "$PWD/broker/config:/work" \
+            eclipse-mosquitto:2.0 mosquitto_passwd -b /work/passwd app app123
+          echo "--- passwd ---" && cat broker/config/passwd
+
+      - name: Bat broker Mosquitto (4 listener: 1883/9001/8883 TLS/9002 WSS)
+        run: |
+          chmod 644 broker/config/passwd broker/config/acl.conf || true
           docker run -d --name parking-mosquitto-ci \
-            -p 1883:1883 -p 9001:9001 \
-            -v "$PWD/broker/config/ci-mosquitto.conf:/mosquitto/config/mosquitto.conf:ro" \
-            eclipse-mosquitto:2.0
+            -p 1883:1883 -p 9001:9001 -p 8883:8883 -p 9002:9002 \
+            -v "$PWD/broker/config:/mosquitto/config:ro" \
+            -v "$PWD/broker/config/certs:/mosquitto/config/certs:ro" \
+            eclipse-mosquitto:2.0 \
+            mosquitto -c /mosquitto/config/mosquitto.conf
           for i in $(seq 1 20); do
-            if docker exec parking-mosquitto-ci mosquitto_sub -h localhost -p 1883 -t 'health' -C 1 -W 2; then break; fi
+            if docker exec parking-mosquitto-ci mosquitto_sub -h localhost -p 1883 \
+                 -u esp32 -P esp32123 -t 'health' -C 1 -W 2 2>/dev/null; then break; fi
             sleep 1
           done
+          docker logs parking-mosquitto-ci 2>&1 | grep -E "Opening|running" || true
 
       - name: Bat backend
         run: |
@@ -80,6 +103,9 @@ jobs:
 
       - name: Chay bo kiem thu tu dong
         run: python simulator/test_suite.py
+
+      - name: Kiem thu TLS rieng (Lab2 - ma hoa)
+        run: python simulator/test_tls.py
 
       - name: Dung backend + broker
         if: always()
@@ -110,6 +136,6 @@ jobs:
         working-directory: app
         run: npm ci
 
-      - name: Kiem tra syntax JSX
+      - name: Kiem tra syntax JSX (7 file)
         working-directory: app
         run: node scripts/checkSyntax.js

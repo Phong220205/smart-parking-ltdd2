@@ -2,7 +2,7 @@
 
 | # | Ô trong hình GV | Link | Trạng thái |
 |---|---|---|---|
-| 1 | Link Github Project | https://github.com/Phong220205/smart-parking-ltdd2 | ✅ có (CI badge xanh: 38/38 PASS) |
+| 1 | Link Github Project | https://github.com/Phong220205/smart-parking-ltdd2 | ✅ có (CI badge xanh: 39/39 PASS) |
 | 2 | Link github source Arduino | https://github.com/Phong220205/smart-parking-ltdd2/blob/master/esp32/parking_firmware.ino | ✅ có |
 | 3 | Link Wokwi | https://wokwi.com/projects/480840614046528513 | ✅ có (firmware V2 + debounce đã nạp, build OK) |
 | 4 | Link source code Backend | https://github.com/Phong220205/smart-parking-ltdd2/tree/master/backend | ✅ có |
@@ -45,7 +45,7 @@ https://smart-parking-ltdd2.onrender.com
 | **Dashboard 5 tab** | ✅ 3 biểu đồ Chart.js, 3 bảng lịch sử, quản lý user |
 | **Firmware V2 trên Wokwi** | ✅ build OK, OLED hiển thị 6 dòng (đọc pixel canvas xác nhận), MQTT OK, tự reconnect |
 | **App React Native** | ✅ bundle Android thành công (552 modules, 2.17 MB) |
-| **Bộ test tự động E2E** | ✅ `simulator/test_suite.py` — **38/38 PASS** |
+| **Bộ test tự động E2E** | ✅ `simulator/test_suite.py` — **39/39 PASS** |
 | **CI GitHub Actions** | ✅ `.github/workflows/ci.yml` — 2 job (test E2E + app syntax) |
 | **MQTT-WS Bridge (2 chiều)** | ✅ `wss://smart-parking-ltdd2.onrender.com/mqtt` — App → Broker → App, đúng `requestId` |
 | **Server cloud thật** | ✅ Render free: https://smart-parking-ltdd2.onrender.com — REST + SSE + Dashboard + bridge đều OK |
@@ -56,8 +56,8 @@ Chi tiết đầy đủ + **8 bug đã tìm & sửa**: xem `docs/KET_QUA_TEST.md
 ```powershell
 python simulator/test_suite.py
 ```
-→ in ra `KET QUA: 38/38 PASS`. Bộ test tự bật/tắt simulator nên không cần chuẩn bị gì.
-**CI tự động**: `.github/workflows/ci.yml` — mỗi lần push GitHub sẽ tự chạy lại đủ 38 checkpoint.
+→ in ra `KET QUA: 39/39 PASS`. Bộ test tự bật/tắt simulator nên không cần chuẩn bị gì.
+**CI tự động**: `.github/workflows/ci.yml` — mỗi lần push GitHub sẽ tự chạy lại đủ 39 checkpoint.
 
 ---
 

@@ -204,6 +204,13 @@ mc.on("connect", () => {
   ], { qos: 1 });
 });
 let systemOnline = false;
+
+// [N3] Chuan hoa moc thoi gian ve epoch (mili-giay).
+// Firmware ESP32 phien ban 3.0 gui kem truong "clock" = gio thuc te da dong bo NTP.
+// Truong "ts" cu van la millis() (dem tu luc boot) nen KHONG dung de hien thi.
+// Neu ESP32 chua kip dong bo NTP thi lay thoi gian cua Server.
+const stampOf = (d) => d.clock || d.epoch || now();
+
 mc.on("message", (topic, buf) => {
   let d;
   try { d = JSON.parse(buf.toString()); } catch { return; }
@@ -214,7 +221,7 @@ mc.on("message", (topic, buf) => {
       occupied: !!d.occupied,
       reservedBy: d.reservedBy || null,
       currentUser: d.currentUser || null,
-      updatedAt: d.updatedAt || now(),
+      updatedAt: stampOf(d),
     };
     saveDb(); broadcast("slots", db.slots);
   }
@@ -233,17 +240,17 @@ mc.on("message", (topic, buf) => {
   else if (topic === "parking/gate/barrier/state") {
     db.gate = d.gate || db.gate;
     saveDb();
-    broadcast("gate", { gate: db.gate, openedBy: d.openedBy, ts: d.ts });
+    broadcast("gate", { gate: db.gate, openedBy: d.openedBy, ts: stampOf(d) });
   }
   else if (topic === "parking/gate/rfid") {
-    pushLog(db.rfidLog, { ...d });
+    pushLog(db.rfidLog, { ...d, ts: stampOf(d) });
     saveDb(); broadcast("rfid", d);
   }
   else if (topic === "parking/billing/receipt") {
-    pushLog(db.receipts, { ...d });
+    pushLog(db.receipts, { ...d, ts: stampOf(d) });
     db.counters.revenue += Number(d.fee || 0);
     db.counters.totalSessions += 1;
-    pushLog(db.events, { type: "BILLING", slot: d.slot, user: d.user, fee: d.fee, minutes: d.minutes });
+    pushLog(db.events, { type: "BILLING", slot: d.slot, user: d.user, fee: d.fee, minutes: d.minutes, ts: stampOf(d) });
     saveDb(); broadcast("receipt", d);
   }
   else if (/^parking\/booking\/.+\/state$/.test(topic)) {

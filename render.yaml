@@ -1,4 +1,26 @@
+# ============================================================================
+#  RENDER BLUEPRINT - DỰ ÁN BÃI ĐỖ XE THÔNG MINH (LTDD2)
+#  ---------------------------------------------------------------------------
+#  Render.yaml định nghĩa 2 dịch vụ:
+#
+#   1) smart-parking-ltdd2  -> Backend Node.js (API REST + Dashboard web +
+#                             bridge MQTT/WebSocket cho App React Native)
+#
+#   2) smart-parking-broker -> MQTT Broker (Mosquitto) CÓ XÁC THỰC user/pass
+#                             + ACL phân quyền theo topic
+#
+#  Mục đích của broker có auth:
+#    - ESP32 (Lab 1) đăng nhập bằng user "esp32" -> được publish vào
+#      parking/# và subscribe parking/booking/+/set, parking/gate/barrier/cmd
+#    - App (Lab 3) đăng nhập bằng user "app" -> CHỈ ĐỌC được dữ liệu,
+#      không publish giả được (chống spam/gian lận dữ liệu)
+#    - Backend đăng nhập bằng user "esp32" (full quyền) để đọc/ghi
+#  Đây chính là tiêu chí "xác thực & phân quyền" của Lab 2.
+# ============================================================================
 services:
+  # --------------------------------------------------------------------------
+  # 1) BACKEND (Node.js) - API + Dashboard + Bridge MQTT-WS cho App
+  # --------------------------------------------------------------------------
   - type: web
     name: smart-parking-ltdd2
     runtime: node
@@ -11,12 +33,15 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "20.11.1"
+      # Broker có xác thực do chính dự án Render quản lý (dịch vụ #2).
+      # Khi dùng broker công cộng thì đổi thành mqtt://test.mosquitto.org:1883
+      # và để MQTT_USER / MQTT_PASS rỗng.
       - key: MQTT_URL
-        value: mqtt://test.mosquitto.org:1883
+        value: mqtt://smart-parking-broker.onrender.com:1883
       - key: MQTT_USER
-        value: ""
+        value: esp32
       - key: MQTT_PASS
-        value: ""
+        value: esp32123
       - key: MQTT_WS_PATH
         value: /mqtt
       - key: JWT_SECRET
@@ -25,3 +50,21 @@ services:
         value: admin123
       - key: DATA_FILE
         value: /tmp/parking.json
+
+  # --------------------------------------------------------------------------
+  # 2) MQTT BROKER (Mosquitto) - CÓ xác thực user/pass + ACL phân quyền
+  #    Dùng Docker image chính thức eclipse-mosquitto:2.0
+  # --------------------------------------------------------------------------
+  - type: worker
+    name: smart-parking-broker
+    runtime: docker
+    plan: free
+    dockerfilePath: ./broker/Dockerfile
+    dockerContext: ./broker
+    envVars:
+      - key: MOSQ_HOST
+        value: smart-parking-broker.onrender.com
+      - key: MOSQ_PORT
+        value: "1883"
+      - key: MOSQ_WS_PORT
+        value: "9001"

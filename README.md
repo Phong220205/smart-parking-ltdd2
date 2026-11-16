@@ -2,7 +2,7 @@
 Mô phỏng 100% – không cần phần cứng thật.
 
 [![CI - Smart Parking](https://github.com/Phong220205/smart-parking-ltdd2/actions/workflows/ci.yml/badge.svg)](https://github.com/Phong220205/smart-parking-ltdd2/actions/workflows/ci.yml)
-![Tests](https://img.shields.io/badge/tests-38%2F38%20PASS-brightgreen)
+![Tests](https://img.shields.io/badge/tests-39%2F39%20PASS-brightgreen)
 ![License](https://img.shields.io/badge/LTDD2-Tr%C4%B0%E1%BB%9D%20H%E1%BB%8C%20%C4%90%E1%BA%A4NG%20%C3%81-blue)
 
 **Server cloud đã deploy**: https://smart-parking-ltdd2.onrender.com  
@@ -55,7 +55,10 @@ Mô phỏng 100% – không cần phần cứng thật.
 ## 3. Chạy nhanh (không phần cứng)
 
 ```powershell
-# 1) Broker (cần Docker)
+# 0) Sinh chứng thư TLS (chỉ 1 lần, cho broker mã hoá)
+python broker/make_certs.py
+
+# 1) Broker (cần Docker) - mở 4 cổng: 1883/9001/8883 TLS/9002 WSS
 cd broker; docker compose up -d; docker compose logs -f
 
 # 2) Giả lập ESP32 + xe ra vào (cần Python)
@@ -63,6 +66,7 @@ pip install paho-mqtt
 python simulator/parking_simulator.py --mode demo     # tự có xe ra vào
 python simulator/parking_simulator.py --mode quiet    # đứng yên, App điều khiển
 python simulator/parking_simulator.py --mode chaos   # test mất mạng/đặt trùng
+python simulator/parking_simulator.py --mode demo --tls   # bản mã hoá (MQTT/TLS 8883)
 
 # 3) Backend + Web Dashboard (cần Node)
 cd backend; npm install; npm start
@@ -70,7 +74,7 @@ cd backend; npm install; npm start
 
 # 4) App (cần Node + Expo Go trên điện thoại)
 cd app; npm install; npx expo start
-# Điện thoại quét QR Expo Go, chỉnh IP broker trong tab Cài đặt
+# Điện thoại quét QR Expo Go, dán link server trong tab Cài đặt
 ```
 
 ### Lệnh điều khiển Simulator từ console (mode `quiet`)
@@ -164,27 +168,69 @@ node backend/test_bridge.js wss://smart-parking-ltdd2.onrender.com/mqtt
 # → === KET QUA: BRIDGE HOAT DONG (2 chieu) ===
 ```
 
-## 4.2 Kiểm thử tự động (Automated E2E Test Suite)
+## 4.2 Cấu trúc App React Native (tách component/service)
+
+```
+app/src/
+├── App.js                  (78 dòng)  – màn hình chính, CHỈ điều phối
+├── components/
+│   └── Tabs.js            (462 dòng)  – Header, TabBar + 4 tab component + StyleSheet
+├── hooks/
+│   └── useParking.js      (182 dòng)  – logic MQTT realtime + REST + state
+├── parkingMqtt.js         (116 dòng)  – service MQTT WebSocket
+├── api.js                  (65 dòng)  – service REST
+├── constants.js            (33 dòng)  – hằng số dùng chung
+└── utils.js                (40 dòng)  – hàm thuần (format, tính phí)
+```
+
+| Tầng | Quy tắc |
+|---|---|
+| **View** (`components/Tabs.js`) | Chỉ render + `props.onXxx()`, **không** gọi mạng, **không** chứa logic nghiệp vụ |
+| **Logic** (`hooks/useParking.js`) | Kết nối MQTT, parse event, state, timeout, chống trùng `requestId` — không biết view |
+| **Service** (`parkingMqtt.js`, `api.js`) | Giao tiếp mạng, trả dữ liệu thuần, không phụ thuộc React |
+| **Shared** (`constants.js`, `utils.js`) | Hằng số + hàm thuần, không side-effect, test được |
+
+> Trước khi tách `App.js` dài **584 dòng** (lẫn view + logic) → sau khi tách còn **78 dòng**.
+
+## 4.3 Bảo mật Broker (Lab2) + mã hoá TLS
+
+| Yêu cầu | Hiện thực |
+|---|---|
+| Xác thực người dùng | `password_file` + `allow_anonymous false` → user `esp32`, `app` |
+| Phân quyền topic | `acl.conf` – App chỉ đọc topic trạng thái, chỉ ghi topic lệnh |
+| **Mã hoá** | 2 listener TLS: **8883** (MQTT/TLS) + **9002** (WebSocket/TLS) |
+| Chứng thư | `broker/make_certs.py` tự sinh CA + server (RSA-2048, SHA-256, SAN + AKI/SKI) |
+| Nhật ký | `log_type all` + `connection_messages true` |
+
+```powershell
+python broker/make_certs.py       # sinh chứng thư (1 lần)
+python simulator/test_tls.py      # → KET QUA TLS: 5/5 PASS
+```
+
+Bật TLS ở firmware: đổi `#define MQTT_USE_TLS 1`.
+Bật TLS ở App: tab ⚙️ Cài đặt → chế độ **🔒 wss:// (TLS)**.
+
+## 4.4 Kiểm thử tự động (Automated E2E Test Suite)
 
 ```powershell
 python simulator/test_suite.py
 ```
 
-Bộ test chạy **38 checkpoint** end-to-end xuyên suốt Broker → Simulator → Backend → Dashboard:
+Bộ test chạy **39 checkpoint** end-to-end xuyên suốt Broker → Simulator → Backend → Dashboard:
 
 ```
-KET QUA: 38/38 PASS
+KET QUA: 39/39 PASS
 ```
 
 - Tự bật/tắt simulator ở chế độ `quiet` (tự thu hồi tiến trình khi kết thúc).
 - Tự sinh tài khoản thử nghiệm không trùng lặp → chạy lại nhiều lần vẫn PASS.
 - Bao phủ: hạ tầng · chống trùng đặt chỗ · vòng đời xe · tính phí · barrier ·
   thống kê · xác thực 401 · validate input · lịch sử · **bridge MQTT-WS 2 chiều** ·
-  Dashboard 5 tab · SSE.
+  **Broker TLS 8883 + WSS 9002 + từ chối CA sai** · Dashboard 5 tab · SSE.
 
 **CI tự động trên GitHub Actions** (`.github/workflows/ci.yml`): mỗi lần push sẽ
-tự dựng Mosquitto + Backend + chạy đủ 36 checkpoint, đồng thời kiểm tra syntax
-firmware, backend và bundle JSX của App React Native.
+tự sinh chứng thư TLS, dựng Mosquitto (4 listener) + Backend, chạy đủ 39 checkpoint
++ `test_tls.py`, đồng thời kiểm tra syntax firmware, backend và **7 file JSX** của App.
 
 ### Bảo mật & vận hành
 - **Xác thực**: token ký HMAC-SHA256, header `Authorization: Bearer <token>`, hạn 7 ngày.
@@ -197,14 +243,14 @@ firmware, backend và bundle JSX của App React Native.
 ## 4.1 Kiểm thử tự động & CI
 
 ```powershell
-# Chạy toàn bộ 36 checkpoint end-to-end (tự bật/tắt simulator)
+# Chạy toàn bộ 39 checkpoint end-to-end (tự bật/tắt simulator)
 python simulator/test_suite.py
-# → KET QUA: 36/36 PASS
+# → KET QUA: 39/39 PASS
 ```
 
 Repo có sẵn **GitHub Actions** (`.github/workflows/ci.yml`) tự động:
 1. Kiểm tra syntax firmware, backend, JSX của app.
-2. Dựng Mosquitto + Backend → chạy `test_suite.py` → 36/36 PASS.
+2. Dựng Mosquitto + Backend → chạy `test_suite.py` → 39/39 PASS.
 3. Đóng gói log backend làm artifact.
 
 Mỗi lần `git push` lên `master` → CI tự chạy, có huy hiệu xanh trên trang repo.
@@ -228,7 +274,7 @@ app/         React Native Expo – 4 tab: Bãi / Lịch sử / Thống kê / Tà
 simulator/   Python giả lập ESP32 + bộ kiểm thử tự động (test_suite.py)
 docs/        Báo cáo, slide, kịch bản quay video, kết quả test
 data/        parking.json (dữ liệu backend, tự sinh – không commit)
-.github/     CI: tự động kiểm thử 36 checkpoint mỗi lần push
+.github/     CI: tự động kiểm thử 39 checkpoint mỗi lần push
 ```
 
 ## 7. Link nộp (điền theo Phiếu chấm – mục I)

@@ -16,7 +16,7 @@ Toàn bộ hệ thống **được mô phỏng 100%** – không cần phần c�
 
 | Lab | Mục tiêu | Thành phần đạt được |
 |---|---|---|
-| **Lab1 – ESP32** | Đọc 6 cảm biến IR, RFID RC522, Servo barrier, màn hình hiển thị, Buzzer; WiFi + MQTT có reconnect và LWT | `esp32/parking_firmware.ino` (565 dòng), mô phỏng trên Wokwi |
+| **Lab1 – ESP32** | Đọc 6 cảm biến IR, RFID RC522, Servo barrier, màn hình hiển thị, Buzzer; WiFi + MQTT có reconnect và LWT | `esp32/parking_firmware.ino` (696 dòng), mô phỏng trên Wokwi |
 | **Lab2 – Broker** | Mosquitto Docker (1883 TCP + 9001 WebSocket), user/ACL phân quyền, QoS1 + retain, log CONNECT/PUBLISH, nhiều client đồng thời | `broker/` (docker-compose, mosquitto.conf, acl.conf, passwd) |
 | **Lab3 – App** | Sơ đồ 6 ô realtime, đặt/hủy chỗ kèm requestId chống trùng, mở barrier, popup thanh toán, banner ONLINE/OFFLINE + tự nối lại, timeout 5s | `app/` React Native Expo – 4 tab |
 | **Server** | Cầu nối MQTT ↔ REST, lưu trữ, thống kê | `backend/` Node/Express + Web Dashboard 5 tab |
@@ -77,7 +77,7 @@ Khi triển khai trên Wokwi, màn hình hiển thị **không sáng** dù code 
 
 Nếu đấu sai chân, Wokwi vẫn biên dịch và chạy bình thường (Serial in ra log đúng) nhưng màn hình **trắng xanh im lặng** – rất dễ gây hiểu nhầm là lỗi code. Sau khi sửa cả 3 điểm, màn hiển thị đúng và đã được kiểm chứng bằng cách **đọc trực tiếp mảng pixel trên canvas** của trình mô phỏng.
 
-### 4.3 Firmware ESP32 (565 dòng)
+### 4.3 Firmware ESP32 (696 dòng)
 
 | Nhóm tính năng | Chi tiết |
 |---|---|
@@ -106,9 +106,49 @@ Nếu đấu sai chân, Wokwi vẫn biên dịch và chạy bình thường (Ser
 ## 5. Broker MQTT (Lab2)
 
 ### 5.1 Cấu hình
-- `broker/docker-compose.yml`: image `eclipse-mosquitto:2.0`, mở cổng `1883` (TCP cho ESP32) và `9001` (WebSocket cho App).
-- `broker/mosquitto.conf`: 2 listener, `allow_anonymous false`, `persistence true`.
+- `broker/docker-compose.yml`: image `eclipse-mosquitto:2.0`, mở **4 cổng**:
+  `1883` (MQTT/TCP cho ESP32) · `9001` (MQTT/WebSocket cho App) ·
+  `8883` (MQTT/**TLS**) · `9002` (MQTT/**WebSocket/TLS**).
+- `broker/config/mosquitto.conf`: 4 listener, `allow_anonymous false`, `persistence true`,
+  `log_type all` + `connection_messages true` (đủ nhật ký CONNECT/PUBLISH theo yêu cầu).
 - `broker/passwd` (gitignore): user `esp32/esp32123` (thiết bị), `app/app123` (ứng dụng).
+
+### 5.1.1 Mã hoá SSL/TLS (sinh chứng thư tự ký)
+
+`broker/make_certs.py` sinh cặp CA + chứng thư server (RSA-2048, SHA-256, 10 năm):
+
+| File | Vai trò |
+|---|---|
+| `config/certs/ca.crt` | CA để client xác thực broker |
+| `config/certs/ca.key` | khóa riêng của CA (**không** commit lên GitHub) |
+| `config/certs/server.crt` | chứng thư server, SAN gồm `broker.local`, `localhost`, IP nội bộ |
+| `config/certs/server.key` | khóa riêng của server (**không** commit lên GitHub) |
+
+Chứng thư có đủ extension **SubjectKeyIdentifier** + **AuthorityKeyIdentifier** để
+chuỗi xác thực TLS hợp lệ (thiếu AKI sẽ bị lỗi `CERTIFICATE_VERIFY_FAILED`).
+
+Cấu hình listener TLS:
+```
+listener 8883
+protocol mqtt
+cafile   /mosquitto/config/certs/ca.crt
+certfile /mosquitto/config/certs/server.crt
+keyfile  /mosquitto/config/certs/server.key
+tls_version tlsv1.2
+```
+
+**Kết quả kiểm thử thực tế (`python simulator/test_tls.py` → 5/5 PASS):**
+| Kịch bản | Kết quả |
+|---|---|
+| MQTT/TLS 8883 với CA tin cậy | ✅ kết nối + subscribe + nhận topic |
+| Client **không** tin CA | ✅ TLS **từ chối** (`self-signed certificate in certificate chain`) |
+| Xác thực chứng thư là bắt buộc | ✅ chuỗi xác thực chạy trên **TLSv1.3** |
+| WebSocket/TLS 9002 (`wss://`) | ✅ handshake thành công |
+| MQTT/TCP 1883 không bị ảnh hưởng | ✅ vẫn chạy bình thường |
+
+Ở phía ESP32, bật TLS bằng cách đổi `#define MQTT_USE_TLS 1` trong firmware
+(dùng `WiFiClientSecure` + `setCACert`). Ở phía App, tab ⚙️ Cài đặt có chế độ
+**🔒 wss:// (TLS)** kèm tùy chọn bật/tắt xác thực chứng thư CA.
 
 ### 5.2 Phân quyền topic (ACL)
 
@@ -214,10 +254,41 @@ GET /api/stats        -> days=7, byHour=24, topUsers=2
 
 ## 7. Ứng dụng di động (Lab3)
 
-### 7.1 Cấu trúc
-- `app/src/parkingMqtt.js`: kết nối MQTT qua WebSocket, subscribe 8 topic, tự reconnect 2s, phát sinh `requestId` cho mỗi lệnh.
-- `app/src/api.js`: lớp gọi REST cho Backend (thống kê, lịch sử, tài khoản).
-- `app/src/App.js`: 4 tab dùng chung một kết nối MQTT.
+### 7.1 Cấu trúc dự án (tách component/service rõ ràng)
+
+```
+app/src/
+├── App.js                  (78 dòng)  – màn hình chính, CHỈ điều phối
+├── components/
+│   └── Tabs.js            (462 dòng)  – Header, TabBar + 4 tab component + StyleSheet
+├── hooks/
+│   └── useParking.js      (182 dòng)  – hook gom logic MQTT realtime + REST + trạng thái
+├── services/
+│   ├── parkingMqtt.js     (116 dòng)  – kết nối MQTT WebSocket, subscribe/publish
+│   └── api.js              (65 dòng)  – gọi REST API cho Backend
+├── constants.js            (33 dòng)  – hằng số dùng chung
+└── utils.js                (40 dòng)  – hàm tiện ích (format, tính phí)
+```
+
+| Tầng | Trách nhiệm | Nguyên tắc |
+|---|---|---|
+| **View** (`components/Tabs.js`) | Chỉ render, nhận `props`, gọi `props.onXxx()` | Không chứa logic nghiệp vụ, không tự gọi mạng |
+| **Logic** (`hooks/useParking.js`) | Kết nối MQTT, parse event, quản lý state, timeout, chống trùng `requestId` | Không biết mặt giao diện (view-agnostic) |
+| **Service** (`parkingMqtt.js`, `api.js`) | Giao tiếp mạng (MQTT / REST), lưu cấu hình | Trả về dữ liệu thuần, không phụ thuộc React |
+| **Shared** (`constants.js`, `utils.js`) | Hằng số & hàm thuần dùng chung | Không có side-effect, dễ test |
+
+> Trước khi tách: `App.js` **584 dòng** chứa lẫn 4 tab + toàn bộ logic MQTT.
+> Sau khi tách: `App.js` còn **78 dòng** — mỗi phần có 1 trách nhiệm rõ ràng,
+> dễ bảo trì, dễ mở rộng thêm tab, dễ viết unit test cho `utils.js`.
+
+**Chi tiết từng module:**
+- `parkingMqtt.js`: kết nối MQTT qua WebSocket, subscribe 8 topic, tự reconnect 2s,
+  phát sinh `requestId` cho mỗi lệnh, hỗ trợ chế độ nối thẳng Broker kèm
+  user/pass + tuỳ chọn `wss://` (TLS) và bật/tắt xác thực chứng thư CA.
+- `api.js`: lớp gọi REST cho Backend (thống kê, lịch sử, tài khoản),
+  có `setApiBase()` để đổi server (local ↔ cloud) không cần sửa code.
+- `constants.js`: `SLOT_IDS`, `FEE_PER_HOUR`, `FREE_MINUTES`, `BOOKING_TIMEOUT_MS`, màu trạng thái ô.
+- `utils.js`: `money()`, `fmtTime()`, `slotColor()`, `slotLabel()`, `calcFee()` — hàm thuần, có thể test độc lập.
 
 ### 7.2 Tính năng theo tab
 
@@ -268,8 +339,8 @@ python simulator/test_suite.py
 ```
 
 Bộ test tự bật/tắt simulator ở chế độ `quiet`, tự sinh tài khoản thử nghiệm không trùng lặp,
-và kiểm tra **36 checkpoint** xuyên suốt chuỗi Broker → Simulator → Backend → Dashboard.
-Kết quả lần chạy cuối: **36/36 PASS**.
+và kiểm tra **39 checkpoint** xuyên suốt chuỗi Broker → Simulator → Backend → Dashboard.
+Kết quả lần chạy cuối: **39/39 PASS**.
 
 | Nhóm | Checkpoint | Kết quả |
 |---|---|---|
@@ -287,7 +358,7 @@ Kết quả lần chạy cuối: **36/36 PASS**.
 
 ### 9.2 CI tự động (GitHub Actions)
 
-File `.github/workflows/ci.yml` chạy lại toàn bộ 36 checkpoint **mỗi lần push** trên
+File `.github/workflows/ci.yml` chạy lại toàn bộ 39 checkpoint **mỗi lần push** trên
 GitHub Actions với Mosquitto service sẵn có, đồng thời kiểm tra syntax firmware,
 backend và các file JSX của App React Native. Đây là bằng chứng chất lượng code
 tự động hoá — điểm cộng đáng kể khi GV đánh giá.
@@ -316,7 +387,7 @@ tự động hoá — điểm cộng đáng kể khi GV đánh giá.
 ## 10. Kết quả & Hạn chế
 
 ### Kết quả
-Hệ thống chạy liên thông đủ 4 tầng (thiết bị → broker → backend → ứng dụng), **không cần phần cứng thật**. Đã kiểm chứng bằng **bộ test tự động 32/32 checkpoint** (chạy bằng 1 lệnh) cộng với các kiểm thử thủ công bổ sung, trong đó có các tính năng nâng cấp: tài khoản + token, ví nạp tiền, thống kê doanh thu 7 ngày, biểu đồ, log lịch sử, realtime SSE, tính phí theo thời gian, hết hạn giữ chỗ, mở barrier bằng RFID.
+Hệ thống chạy liên thông đủ 4 tầng (thiết bị → broker → backend → ứng dụng), **không cần phần cứng thật**. Đã kiểm chứng bằng **bộ test tự động 39/39 checkpoint** (chạy bằng 1 lệnh) cộng với các kiểm thử thủ công bổ sung, trong đó có các tính năng nâng cấp: tài khoản + token, ví nạp tiền, thống kê doanh thu 7 ngày, biểu đồ, log lịch sử, realtime SSE, tính phí theo thời gian, hết hạn giữ chỗ, mở barrier bằng RFID.
 
 ### Hạn chế
 - Chưa có phần cứng thật → IR/RFID/Servo mô phỏng bằng Wokwi + simulator. Khi có ESP32 thật chỉ cần đổi `MQTT_HOST` và `WIFI_SSID`.

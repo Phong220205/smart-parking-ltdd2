@@ -19,7 +19,7 @@ Chay:
   python simulator/parking_simulator.py --mode chaos   # test mat mang / dat trung
 """
 
-import time, json, random, argparse, threading, sys
+import time, json, random, argparse, threading, sys, os
 try:
     import paho.mqtt.client as mqtt
 except ImportError:
@@ -47,6 +47,10 @@ parser.add_argument("--mode", default="demo", choices=["demo", "quiet", "chaos"]
 parser.add_argument("--seed", type=int, default=None, help="Dat random seed de chay lap lai")
 parser.add_argument("--client-id", default=None,
                     help="Client ID cung cho MQTT. Client moi se duoc broker kick client cu cung ID")
+parser.add_argument("--tls", action="store_true",
+                    help="Dung MQTT/TLS (cong 8883) - mat hoa SSL/TLS")
+parser.add_argument("--ca", default=None,
+                    help="File CA de xac thuc chung thu broker (mac dinh: broker/config/certs/ca.crt)")
 args = parser.parse_args()
 if args.seed is not None:
     random.seed(args.seed)
@@ -55,15 +59,34 @@ client = mqtt.Client(client_id=args.client_id or f"sim-esp32-{random.randint(0, 
                       protocol=mqtt.MQTTv311)
 if args.user and args.password and not args.no_auth:
     client.username_pw_set(args.user, args.password)
+if args.tls:
+    # Bat SSL/TLS cho MQTT - xac thuc chung thu broker bang CA
+    import ssl as _ssl
+    _ca = args.ca or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                  "broker", "config", "certs", "ca.crt")
+    _ctx = _ssl.create_default_context(cafile=_ca if os.path.exists(_ca) else None)
+    if not os.path.exists(_ca):
+        _ctx.check_hostname = False
+        _ctx.verify_mode = _ssl.CERT_NONE
+    client.tls_set_context(_ctx)
+    if args.port == 1883:
+        args.port = 8883
+    print(f"[TLS] Bat SSL/TLS, CA={_ca}")
 client.will_set("parking/system/status", json.dumps({"online": False}), qos=1, retain=True)
 
 
 # ------------------------------- PUBLISH -------------------------------------
+def clock():
+    """[N3] Moc thoi gian thuc te (epoch mili-giay) - tuong duong dong ho NTP cua ESP32."""
+    return int(time.time() * 1000)
+
+
 def pub_slot(s):
     client.publish(f"parking/slot/{s}/status", json.dumps({
         "id": s, "occupied": state[s]["occupied"],
         "reservedBy": state[s]["reservedBy"], "currentUser": state[s]["currentUser"],
-        "updatedAt": int(time.time() * 1000)}), qos=1, retain=True)
+        "updatedAt": int(time.time() * 1000),
+        "clock": clock()}), qos=1, retain=True)
 
 
 def pub_snapshot():
@@ -71,30 +94,35 @@ def pub_snapshot():
         "slots": [{"id": s, "occupied": v["occupied"], "reservedBy": v["reservedBy"],
                    "currentUser": v["currentUser"]} for s, v in state.items()],
         "gate": gate, "free": sum(1 for v in state.values() if not v["occupied"]),
-        "revenue": revenue, "ts": int(time.time() * 1000)}), qos=1, retain=True)
+        "revenue": revenue, "ts": int(time.time() * 1000),
+        "clock": clock()}), qos=1, retain=True)
 
 
 def pub_booking(s, st, user, req, ok, msg):
     client.publish(f"parking/booking/{s}/state", json.dumps({
         "slot": s, "state": st, "user": user, "requestId": req,
-        "ok": ok, "msg": msg}), qos=1, retain=True)
+        "ok": ok, "msg": msg,
+        "clock": clock()}), qos=1, retain=True)
 
 
 def pub_gate():
     client.publish("parking/gate/barrier/state", json.dumps({
-        "gate": gate, "ts": int(time.time() * 1000)}), qos=1, retain=True)
+        "gate": gate, "ts": int(time.time() * 1000),
+        "clock": clock()}), qos=1, retain=True)
 
 
 def pub_rfid(card, slot, event, user=""):
     client.publish("parking/gate/rfid", json.dumps({
         "card": card, "slot": slot, "event": event, "user": user,
-        "ts": int(time.time() * 1000)}), qos=0)
+        "ts": int(time.time() * 1000),
+        "clock": clock()}), qos=0)
 
 
 def pub_receipt(s, user, minutes, fee):
     client.publish("parking/billing/receipt", json.dumps({
         "slot": s, "user": user, "minutes": minutes, "fee": fee,
-        "ts": int(time.time() * 1000)}), qos=1, retain=True)
+        "ts": int(time.time() * 1000),
+        "clock": clock()}), qos=1, retain=True)
 
 
 def calc_fee(minutes):
@@ -222,9 +250,12 @@ def expire_loop():
 def beat_loop():
     while True:
         time.sleep(15)
+        # [N5] Nhip song cua he thong + chi so giam sat (giong firmware ESP32 3.0)
         client.publish("parking/system/heartbeat", json.dumps({
             "uptime": int(time.time()), "wifi": -55, "freeHeap": 120000,
-            "revenue": revenue, "firmware": "2.0-sim"}), qos=0)
+            "revenue": revenue, "firmware": "3.0-sim",
+            "clockOK": True, "clock": clock(),
+            "wdt": True}), qos=0)
 
 
 # ------------------------------- MAIN ----------------------------------------

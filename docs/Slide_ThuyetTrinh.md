@@ -67,11 +67,23 @@ ESP32 (thật/Wokwi)  ──MQTT 1883──▶  Mosquitto Broker  ──WS 9001�
 - *Gợi ý hình: ảnh Wokwi đang chạy, OLED hiện "Trong: 5/6 CLOSED".*
 
 ### Slide 7 – Broker (Lab2)
-- `docker-compose.yml` – image `eclipse-mosquitto:2.0`, cổng **1883** (ESP32) + **9001** (App WebSocket).
+- `docker-compose.yml` – image `eclipse-mosquitto:2.0`, **4 listener**:
+  **1883** (MQTT/TCP) · **9001** (WebSocket) · **8883** (MQTT/**TLS**) · **9002** (WebSocket/**TLS**).
 - User `esp32/esp32123` (thiết bị) và `app/app123` (ứng dụng) + file `acl.conf`.
+- **ACL phân quyền**: App chỉ **đọc** topic trạng thái, chỉ **ghi** topic lệnh → App **không thể giả mạo cảm biến**.
+- **Mã hoá SSL/TLS**: `make_certs.py` tự sinh CA + chứng thư (RSA-2048/SHA-256) → kiểm thử **5/5 PASS**, client không tin CA bị TLS **từ chối**.
 - QoS 1 + Retain cho snapshot/booking/gate → App mới vào thấy ngay trạng thái.
 - **LWT**: ESP32 mất mạng → Broker tự publish `{"online":false}`.
-- *Gợi ý hình: ảnh `docker compose ps` + log `CONNECT / PUBLISH`.*
+- *Gợi ý hình: ảnh `docker compose ps` + log `CONNECT / PUBLISH` + log test TLS.*
+
+### Slide 7b – Bảo mật Broker (điểm ăn điểm Lab2)
+| Yêu cầu phiếu chấm | Cách hiện thực | Minh chứng |
+|---|---|---|
+| Xác thực người dùng | `password_file`, `allow_anonymous false` | 2 user: `esp32`, `app` |
+| Phân quyền topic | `acl.conf` — App chỉ đọc trạng thái, chỉ ghi lệnh | App không publish được trạng thái ô |
+| **Mã hoá (TLS)** | 2 listener TLS + chứng thư tự ký có CA/SAN/AKI | `test_tls.py` → **5/5 PASS**, TLSv1.3 |
+| Nhật ký (log) | `log_type all` + `connection_messages true` | Log CONNECT/PUBLISH đầy đủ |
+| Nhiều client đồng thời | Broker + App + ESP32 + simulator cùng lúc | Test suite chạy song song 4 client |
 
 ### Slide 8 – Server & Web Dashboard (nâng cấp)
 - **Backend Node/Express**: 19 endpoint REST + **SSE realtime** (`/api/stream`).
@@ -97,7 +109,10 @@ ESP32 (thật/Wokwi)  ──MQTT 1883──▶  Mosquitto Broker  ──WS 9001�
 - Màu ô: xanh trống / đỏ có xe / vàng bạn đặt / cam đã đặt.
 - Đăng nhập được (đăng ký, JWT, ví nạp tiền, lịch sử cá nhân).
 - Xử lý lỗi: banner ONLINE/OFFLINE, **timeout đặt chỗ 5s**, tự reconnect 2s, `try/catch` payload.
-- *Gợi ý hình: ảnh App Expo Go (chụp màn hình điện thoại).*
+- **Cấu trúc tách component/service rõ ràng** (từ 584 dòng → App.js còn 78 dòng):
+  `App.js` (điều phối) · `components/Tabs.js` (view) · `hooks/useParking.js` (logic) ·
+  `parkingMqtt.js` + `api.js` (service) · `constants.js` + `utils.js` (dùng chung).
+- *Gợi ý hình: ảnh App Expo Go (chụp màn hình điện thoại) + cây thư mục `app/src/`.*
 
 ### Slide 10 – Quy tắc nghiệp vụ
 - **Tính phí**: 30 phút đầu miễn phí → sau đó **3000đ/giờ** (làm tròn lên). *Test: 95 phút → 6000đ.*
@@ -106,8 +121,8 @@ ESP32 (thật/Wokwi)  ──MQTT 1883──▶  Mosquitto Broker  ──WS 9001�
 - **Barrier tự đóng sau 5 giây**.
 - *Gợi ý hình: sơ đồ luồng booking.*
 
-### Slide 11 – Kiểm thử tự động (38/38 PASS)
-- **Bộ test end-to-end 1 lệnh**: `python simulator/test_suite.py` → `KET QUA: 38/38 PASS`.
+### Slide 11 – Kiểm thử tự động (39/39 PASS)
+- **Bộ test end-to-end 1 lệnh**: `python simulator/test_suite.py` → `KET QUA: 39/39 PASS`.
 - Tự bật/tắt simulator `quiet`, tự sinh tài khoản thử nghiệm không trùng lặp.
 | Nhóm | Checkpoint | KQ |
 |---|---|---|
@@ -119,11 +134,12 @@ ESP32 (thật/Wokwi)  ──MQTT 1883──▶  Mosquitto Broker  ──WS 9001�
 | Xác thực | Đăng ký/đăng nhập · nạp tiền · **sai mật khẩu → 401** | ✅ |
 | Dịch vụ | `health/deep` · 404 JSON · **validate sai → 400** | ✅ |
 | **Bridge WS** | **App → Broker → App, đúng `requestId`** | ✅ |
+| **Broker TLS** | **MQTT/TLS 8883 + WSS 9002 + client không tin CA bị từ chối** | ✅ |
 | Dashboard | HTML · 5 tab · Chart.js · **SSE realtime** | ✅ |
 
-- **CI GitHub Actions**: mỗi lần push tự chạy lại 38 checkpoint + kiểm tra syntax firmware/backend/app.
-  *Kết quả thực tế trên GitHub: `KET QUA: 38/38 PASS` + `3/3 file syntax OK`.*
-- **8 bug đã tìm & sửa**: OLED trắng xanh · lệnh ENTER bị IR ghi đè · nhiễu bounce nút bấm · token JWT sai · barrier không lưu `db.gate` · test SSE đọc theo byte bị treo · test 404 mất mã HTTP · bridge sai thứ tự route.
+- **CI GitHub Actions**: mỗi lần push tự chạy lại 39 checkpoint + kiểm tra syntax firmware/backend/app (7 file JSX).
+  *Kết quả thực tế trên GitHub: `KET QUA: 39/39 PASS` + `7/7 file syntax OK`.*
+- **9 bug đã tìm & sửa**: OLED trắng xanh · lệnh ENTER bị IR ghi đè · nhiễu bounce nút bấm · token JWT sai · barrier không lưu `db.gate` · test SSE đọc theo byte bị treo · test 404 mất mã HTTP · bridge sai thứ tự route · chứng thư thiếu AuthorityKeyIdentifier.
 - *Gợi ý hình: bảng kết quả test + ảnh OLED đang hiển thị.*
 
 ### Slide 12 – Kết luận & hướng phát triển

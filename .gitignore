@@ -11,3 +11,16 @@ passwd
 data/
 *.db.json
 .DS_Store
+
+# ---- Chứng thư TLS tự ký (sinh bằng broker/make_certs.py) ----
+# KHONG commit private key lên GitHub. CI tu sinh lai.
+broker/config/certs/ca.key
+broker/config/certs/server.key
+broker/certs/
+
+# ---- File tam thoi / tool hop nhat (khong commit) ----
+cloudflared.exe
+docs/_*.txt
+_serve.py
+_patch_*.py
+

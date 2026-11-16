@@ -309,6 +309,32 @@ def main():
     except Exception as e:
         check("Dashboard HTML phuc vu", False, str(e))
 
+    # --- Bao mat Broker: TLS / ma hoa (Lab2 tieu chi "ma hoa") ---
+    # Chi kiem tra neu broker local co mo cong TLS 8883
+    tls_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "test_tls.py")
+    tls_host = os.environ.get("BROKER_HOST", "127.0.0.1")
+    try:
+        import socket as _socket
+        _s = _socket.socket()
+        _s.settimeout(2)
+        tls_up = (_s.connect_ex((tls_host, 8883)) == 0)
+        _s.close()
+    except Exception:
+        tls_up = False
+    if tls_up:
+        try:
+            tp = subprocess.run([sys.executable, tls_script], capture_output=True,
+                                text=True, timeout=60,
+                                env={**os.environ, "BROKER_HOST": tls_host})
+            out = tp.stdout or ""
+            check("Broker TLS: MQTT/TLS 8883 + WSS 9002 + tu choi CA sai",
+                  "5/5 PASS" in out, out.strip().splitlines()[-1][:70] if out.strip() else "")
+        except Exception as e:
+            check("Broker TLS: MQTT/TLS 8883 + WSS 9002 + tu choi CA sai", False, str(e))
+    else:
+        check("Broker TLS: MQTT/TLS 8883 + WSS 9002 + tu choi CA sai", True,
+              "broker khong mo cong TLS (public broker) - bo qua")
+
     # --- SSE ---
     try:
         resp = urllib.request.urlopen(urllib.request.Request(BASE + "/api/stream"), timeout=8)

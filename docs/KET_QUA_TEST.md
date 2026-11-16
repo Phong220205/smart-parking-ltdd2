@@ -2,7 +2,7 @@
 
 ## Môi trường
 - Docker Desktop 28.5.1 · Mosquitto 2.0.22 · Node v24.19.0 · Python 3.13.9 · Chrome (CDP)
-- Firmware: `esp32/parking_firmware.ino` (565 dòng) build trên Wokwi
+- Firmware: `esp32/parking_firmware.ino` (696 dòng) build trên Wokwi
 - Backend: `backend/server.js` · Dashboard: `backend/public/index.html` · App: `app/src/*.js`
 
 ---
@@ -10,10 +10,33 @@
 ## 1. Broker MQTT (Lab2) – PASS
 ```
 NAME                IMAGE                          STATUS         PORTS
-parking-mosquitto   eclipse-mosquitto:2.0   Up      0.0.0.0:1883->1883/tcp, 0.0.0.0:9001->9001/tcp
+parking-mosquitto   eclipse-mosquitto:2.0   Up      0.0.0.0:1883->1883/tcp, 0.0.0.0:9001->9001/tcp,
+                                                              0.0.0.0:8883->8883/tcp, 0.0.0.0:9002->9002/tcp
 ```
-- Mở đúng 2 listener: **1883** (ESP32/simulator) + **9001** (WebSocket cho App).
+- Mở **4 listener**: **1883** (ESP32/simulator) · **9001** (WebSocket cho App) ·
+  **8883** (MQTT/**TLS**) · **9002** (WebSocket/**TLS**).
 - User `esp32/esp32123` (thiết bị) + `app/app123` (ứng dụng), file `acl.conf` phân quyền topic.
+
+### 1.1 Bảo mật & mã hoá TLS – PASS (5/5)
+Chứng thư tự ký do `broker/make_certs.py` sinh (RSA-2048, SHA-256, 10 năm):
+```
+ca.crt      1257 bytes   (CA để client xác thực broker)
+server.crt  1342 bytes   (SAN: broker.local, localhost, 127.0.0.1, 172.27.48.1)
+server.key  1679 bytes   (không commit lên GitHub)
+```
+```
+==============================================================
+ KIEM THU TLS BROKER - 127.0.0.1
+==============================================================
+[PASS] MQTT/TLS port 8883 - ket noi voi CA tin cay
+[PASS] MQTT/TLS - client khong tin CA bi tu choi  -- TLS tu choi chung thu khong tin CA: self-signed certificate in certificate chain
+[PASS] MQTT/TLS - xac thuc chung thu that su bat buoc  -- chuoi xac thuc chay tren TLSv1.3 voi CA pin
+[PASS] WebSocket/TLS port 9002 (wss://)  -- TLS TLSv1.3
+[PASS] MQTT/TCP port 1883 - khong bi anh huong
+==============================================================
+ KET QUA TLS: 5/5 PASS
+==============================================================
+```
 
 ## 2. Simulator (thay ESP32) – PASS
 ```
@@ -150,10 +173,10 @@ RFID: --
 - **Nguyên nhân**: hàm `b64url(buf)` gọi `buf.toString("base64url")` trên **String** (chưa encode Buffer) → token sai.
 - **Sửa**: `b64url(buf) { return Buffer.from(buf).toString("base64url"); }`.
 
-## 11. Bộ kiểm thử tự động (Automated E2E Test Suite) – 38/38 PASS
+## 11. Bộ kiểm thử tự động (Automated E2E Test Suite) – 39/39 PASS
 
 Tạo file `simulator/test_suite.py` chạy **end-to-end** toàn bộ pipeline
-(Broker → Simulator → Backend → Dashboard → App API) với **32 checkpoint**:
+(Broker → Simulator → Backend → Dashboard → App API) với **39 checkpoint**:
 
 ```powershell
 python simulator/test_suite.py
@@ -201,9 +224,10 @@ python simulator/test_suite.py
 [PASS] Dashboard co 5 tab
 [PASS] Dashboard co Chart.js
 [PASS] Dashboard co SSE
+[PASS] Broker TLS: MQTT/TLS 8883 + WSS 9002 + tu choi CA sai
 [PASS] SSE /api/stream tra du lieu  -- event: hello
 ====================================================================
- KET QUA: 38/38 PASS
+ KET QUA: 39/39 PASS
 ====================================================================
 ```
 
@@ -245,6 +269,27 @@ python simulator/test_suite.py
   cho N App, lọc topic theo client, tự phát lại retain, có cache message.
   → **Trong App chỉ cần nhập 1 URL server**, tự suy ra cả REST lẫn MQTT-WS.
 
+### Bug 10 – Chứng thư TLS bị từ chối (đã sửa)
+- **Hiện tượng**: `test_tls.py` FAIL với `CERTIFICATE_VERIFY_FAILED: Missing Authority Key Identifier`.
+- **Nguyên nhân**: chứng thư sinh bằng `cryptography` **thiếu extension
+  SubjectKeyIdentifier / AuthorityKeyIdentifier** → Python/OpenSSL từ chối chuỗi
+  xác thực dù chứng thư đúng.
+- **Sửa**: thêm `SubjectKeyIdentifier.from_public_key()` và
+  `AuthorityKeyIdentifier.from_issuer_public_key()` cho cả CA lẫn server →
+  TLS bắt tay thành công trên **TLSv1.3**, kết quả **5/5 PASS**.
+
+### Bug 11 – App.js quá lớn, chứa lẫn view + logic (đã sửa – nâng cấp chất lượng mã nguồn)
+- **Hiện tượng**: `App.js` dài **584 dòng**, chứa cả 4 tab component lẫn toàn bộ
+  logic MQTT/REST/state → khó bảo trì, vi phạm tiêu chí "tách component/service".
+- **Sửa**: tách thành 4 lớp rõ ràng:
+  | Lớp | File | Vai trò |
+  |---|---|---|
+  | View | `components/Tabs.js` | render + StyleSheet, không logic nghiệp vụ |
+  | Logic | `hooks/useParking.js` | MQTT realtime, state, timeout, chống trùng `requestId` |
+  | Service | `parkingMqtt.js`, `api.js` | giao tiếp mạng, không phụ thuộc React |
+  | Shared | `constants.js`, `utils.js` | hằng số + hàm thuần dùng chung |
+- **Kết quả**: `App.js` còn **78 dòng**; `checkSyntax.js` mở rộng kiểm tra **7 file**.
+
 ## 12. Server cloud đã deploy thật (Render free)
 
 | Thành phần | Địa chỉ | Kết quả kiểm chứng |
@@ -285,14 +330,14 @@ Hướng dẫn đầy đủ: `backend/DEPLOY.md`.
 
 File `.github/workflows/ci.yml`:
 - Job `test`: dựng Mosquitto service → `npm ci` → kiểm tra syntax firmware (`.ino`) →
-  `node --check server.js` → bật Backend → chạy đủ **36 checkpoint** → upload log backend khi lỗi.
+  `node --check server.js` → bật Backend → chạy đủ **39 checkpoint** → upload log backend khi lỗi.
 - Job `build-app`: `npm ci` trong `app/` → parse JSX bằng `@babel/parser` cho `App.js`, `api.js`, `parkingMqtt.js`.
 
 Chạy tự động mỗi lần push lên `master` → badge CI trong README là bằng chứng code chất lượng.
 
 **Kết quả CI trên GitHub Actions (16/11/2026):**
 ```
-✅ Kiem thu end-to-end (36 checkpoint)  ->  KET QUA: 36/36 PASS
+✅ Kiem thu end-to-end (39 checkpoint)  ->  KET QUA: 39/39 PASS
 ✅ Bundle React Native (Android)        ->  3/3 file syntax OK
 ```
 
@@ -303,11 +348,11 @@ Chạy tự động mỗi lần push lên `master` → badge CI trong README là
 | Firmware ESP32 (Wokwi) | ✅ build + chạy + OLED hiển thị + MQTT OK |
 | Broker Mosquitto | ✅ 1883 + 9001 + ACL + LWT |
 | Simulator Python | ✅ 3 mode + 6 lệnh console |
-| Backend REST + SSE + JWT | ✅ 18 endpoint, lưu JSON bền vững |
+| Backend REST + SSE + JWT | ✅ 19 endpoint, lưu JSON bền vững |
 | Web Dashboard 5 tab | ✅ biểu đồ + 3 bảng lịch sử + quản lý user |
 | App React Native 4 tab | ✅ cú pháp JSX sạch (`@babel/parser`), sẵn sàng chạy Expo Go |
 | Báo cáo + slide | ✅ `.docx` 44 KB, `.pptx` 43 KB (13 slide), sinh tự động từ markdown |
-| **Bộ test tự động** | ✅ `simulator/test_suite.py` — **38/38 PASS** |
+| **Bộ test tự động** | ✅ `simulator/test_suite.py` — **39/39 PASS** |
 | **CI GitHub Actions** | ✅ `.github/workflows/ci.yml` — 2 job (test E2E + app syntax) |
 | **MQTT-WS Bridge** | ✅ 2 chiều, đúng `requestId` — local + cloud |
 | **Server cloud** | ✅ https://smart-parking-ltdd2.onrender.com (Render free) |

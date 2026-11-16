@@ -7,7 +7,15 @@ const fs = require("fs");
 const path = require("path");
 const { parse } = require("@babel/parser");
 
-const files = ["src/App.js", "src/api.js", "src/parkingMqtt.js"];
+const files = [
+  "src/App.js",
+  "src/api.js",
+  "src/parkingMqtt.js",
+  "src/constants.js",
+  "src/utils.js",
+  "src/hooks/useParking.js",
+  "src/components/Tabs.js",
+];
 let failed = 0;
 
 for (const rel of files) {
