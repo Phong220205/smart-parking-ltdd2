@@ -1,6 +1,10 @@
 import express from "express";
 import mqtt from "mqtt";
 import cors from "cors";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 app.use(cors());
@@ -65,6 +69,7 @@ app.post("/api/gate", (req, res) => {
   mc.publish("parking/gate/barrier/cmd", JSON.stringify({ cmd, by, requestId }), { qos: 1 });
   res.json({ ok: true, cmd });
 });
-app.get("/", (req, res) => res.send("Smart Parking Backend OK. Xem /api/status"));
+app.get("/", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
+app.use(express.static(path.join(__dirname, "public")));
 
 app.listen(PORT, () => console.log("Backend http://localhost:" + PORT));

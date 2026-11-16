@@ -1,0 +1,6 @@
+# Thu vien Wokwi (Library Manager -> Add new library -> go ten nay)
+PubSubClient
+ArduinoJson
+ESP32Servo
+MFRC522
+LiquidCrystal I2C

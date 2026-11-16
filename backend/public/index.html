@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bãi Đỗ Xe Thông Minh – Web Dashboard</title>
+<style>
+  body{font-family:Arial,sans-serif;background:#f5f6fa;margin:0;padding:20px;color:#2c3e50}
+  h1{text-align:center}
+  .badge{display:inline-block;padding:4px 14px;border-radius:14px;color:#fff;font-weight:bold}
+  .on{background:#2ecc71}.off{background:#e74c3c}
+  .wrap{max-width:900px;margin:auto}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:16px 0}
+  .slot{border-radius:12px;padding:20px;text-align:center;color:#fff;font-weight:bold}
+  .slot small{display:block;font-weight:normal}
+  .free{background:#2ecc71}.busy{background:#e74c3c}.mine{background:#f1c40f;color:#333}.booked{background:#e67e22}
+  .row{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0}
+  button{padding:10px 16px;border:0;border-radius:8px;background:#0984e3;color:#fff;font-weight:bold;cursor:pointer}
+  button.gray{background:#7f8c8d}button.red{background:#d63031}
+  input,select{padding:8px;border-radius:8px;border:1px solid #b2bec3}
+  .card{background:#fff;border-radius:12px;padding:14px;margin-top:12px;box-shadow:0 2px 6px rgba(0,0,0,.08)}
+  #log{font-size:13px;max-height:220px;overflow:auto}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  td,th{border-bottom:1px solid #eee;padding:6px;text-align:left}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🅿️ BÃI ĐỖ XE THÔNG MINH</h1>
+  <div style="text-align:center"><span id="conn" class="badge off">● Đang nối...</span>
+  <div id="sum" style="margin:6px"></div></div>
+
+  <div class="card">
+    <b>Người dùng:</b> <input id="myId" value="SV01" style="width:90px">
+    <b>Backend:</b> <input id="api" value="" style="width:260px" placeholder="để trống = cùng host">
+    <button onclick="load()">Nối lại</button>
+  </div>
+
+  <div id="slots" class="grid"></div>
+
+  <div class="row">
+    <button onclick="gate('OPEN')">MỞ BARRIER</button>
+    <button class="gray" onclick="gate('CLOSE')">ĐÓNG BARRIER</button>
+    <button class="red" onclick="load()">🔄 Tải lại</button>
+  </div>
+
+  <div class="card"><b>Hóa đơn mới nhất</b><div id="receipts">—</div></div>
+  <div class="card"><b>Nhật ký RFID / hệ thống</b><div id="log"></div></div>
+  <div class="card"><small>Web này đọc từ Backend REST <code>/api/status</code> (Backend tự lấy từ MQTT Broker). Đặt chỗ từ web gọi <code>POST /api/booking</code> rồi Backend chuyển tiếp MQTT – đúng luật chống trùng như App.</small></div>
+</div>
+<script>
+let base='';
+function apiBase(){ const v=document.getElementById('api').value.trim(); return v||''; }
+async function load(){
+  base=apiBase();
+  try{
+    const r=await fetch(base+'/api/status'); const d=await r.json();
+    document.getElementById('conn').className='badge '+(d.online?'on':'off');
+    document.getElementById('conn').textContent=d.online?'● ONLINE':'○ OFFLINE';
+    const ids=Object.keys(d.slots); let free=ids.filter(k=>!d.slots[k].occupied).length;
+    document.getElementById('sum').textContent=`Trống ${free}/${ids.length} • Barrier: ${d.gate}`;
+    const my=document.getElementById('myId').value.trim()||'SV01';
+    document.getElementById('slots').innerHTML=ids.map(id=>{
+      const s=d.slots[id]; let cls='free',st='TRỐNG';
+      if(s.occupied){cls='busy';st='CÓ XE';}
+      else if(s.reservedBy){ if(s.reservedBy===my){cls='mine';st='BẠN ĐẶT';} else {cls='booked';st='ĐÃ ĐẶT';} }
+      return `<div class="slot ${cls}">${id}<br>${st}<small>${s.reservedBy||''}</small>
+        <div style="margin-top:8px"><button onclick="book('${id}','reserve')">Đặt</button>
+        <button class="gray" onclick="book('${id}','cancel')">Hủy</button></div></div>`;
+    }).join('');
+    const r2=await fetch(base+'/api/receipts'); const rec=await r2.json();
+    document.getElementById('receipts').innerHTML=rec.length?('<table>'+rec.slice(0,5).map(x=>`<tr><td>Ô ${x.slot}</td><td>${x.minutes} phút</td><td><b>${x.fee}đ</b></td><td>${x.user||''}</td></tr>`).join('')+'</table>'):'—';
+  }catch(e){ document.getElementById('conn').className='badge off'; document.getElementById('conn').textContent='○ Mất kết nối Backend'; }
+}
+async function book(slot,action){
+  const my=document.getElementById('myId').value.trim()||'SV01';
+  const r=await fetch(base+'/api/booking',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slot,user:my,action,requestId:String(Date.now())})});
+  const d=await r.json(); log(`Đặt ${slot} ${action}: ${JSON.stringify(d)}`); setTimeout(load,800);
+}
+async function gate(cmd){
+  const my=document.getElementById('myId').value.trim()||'SV01';
+  await fetch(base+'/api/gate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cmd,by:my})});
+  log('Barrier '+cmd); setTimeout(load,800);
+}
+function log(m){ const el=document.getElementById('log'); el.innerHTML=`<div>${new Date().toLocaleTimeString()} ${m}</div>`+el.innerHTML; }
+load(); setInterval(load,3000);
+</script>
+</body>
+</html>
