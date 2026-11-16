@@ -143,19 +143,23 @@ private:
     _wsReady = false; _rxLen = _rxPos = _rawLen = 0;
     Serial.printf("[WS] Bat tay wss://%s%s ...\n", _host, _path);
 
-    // Giới hạn thời gian bắt tay: không được vượt quá ngưỡng Watchdog (15s)
-    // vì hàm này chạy đồng bộ trong setup()/loop().
-    const unsigned long DEADLINE = millis() + 6000UL;
+    // LƯU Ý QUAN TRỌNG: phải tách hạn chót cho từng bước.
+    // Bắt tay TLS tới Cloudflare có thể mất vài giây; nếu dùng chung một
+    // deadline với bước đọc header thì sẽ hết thời gian trước khi đọc được
+    // phản hồi 101 -> luôn báo "Khong nhan duoc header phan hoi".
+    const unsigned long TLS_DEADLINE = millis() + 12000UL;   // hạn chót bắt tay TLS
+    const unsigned long HDR_DEADLINE = millis() + 20000UL;   // hạn chót đọc header
 
     _tls.setTimeout(3000);
     bool tlsOk = false;
-    while (millis() < DEADLINE && !tlsOk) {
+    while (millis() < TLS_DEADLINE && !tlsOk) {
       tlsOk = _tls.connect(_host, _port);
       wdtKick();                 // giữ Watchdog "sống" trong lúc chờ mạng
       if (!tlsOk) delay(50);
     }
     if (!tlsOk) { Serial.println("[WS] TLS connect that bai"); return 0; }
-    _tls.setTimeout(2000);
+    Serial.println("[WS] TLS da ket noi (bao mat bang SSL/TLS)");
+    _tls.setTimeout(5000);
 
     String req;
     req.reserve(320);
@@ -165,6 +169,9 @@ private:
     req += "Connection: Upgrade\r\n";
     req += "Sec-WebSocket-Key: "; req += makeKey(); req += "\r\n";
     req += "Sec-WebSocket-Version: 13\r\n";
+    // MQTT-over-WebSocket: phải MỜI subprotocol "mqtt" (broker trả lại đúng
+    // tên này trong header phản hồi 101, nếu không mời -> server từ chối).
+    req += "Sec-WebSocket-Protocol: mqtt\r\n";
     req += "\r\n";
     if (_tls.write((const uint8_t *)req.c_str(), req.length()) == 0) {
       Serial.println("[WS] Ghi HTTP request that bai");
@@ -173,19 +180,23 @@ private:
 
     // Đọc header phản hồi tới khi thấy dòng trống kết thúc
     int end = -1;
-    while (millis() < DEADLINE) {
+    while (millis() < HDR_DEADLINE) {
       end = findHeaderEnd();
       if (end > 0) break;
       if (_tls.available()) {
         int c = _tls.read();
-        if (c < 0) break;
+        if (c < 0) { delay(5); continue; }   // đọc lỗi tạm thời -> thử lại
         if (_rawLen < (int)sizeof(_raw)) _raw[_rawLen++] = (uint8_t)c;
       } else {
         delay(2);
         wdtKick();               // giữ Watchdog "sống" trong lúc chờ phản hồi
       }
     }
-    if (end <= 0) { Serial.println("[WS] Khong nhan duoc header phan hoi"); _tls.stop(); return 0; }
+    if (end <= 0) {
+      Serial.print("[WS] Khong nhan duoc header phan hoi (nhan duoc ");
+      Serial.print(_rawLen); Serial.println(" byte)");
+      _tls.stop(); return 0;
+    }
 
     // Kiểm tra mã trạng thái (101 = Switching Protocols)
     String head((const char *)_raw, (unsigned int)end);
@@ -453,9 +464,9 @@ unsigned long lastWifiTry = 0;
 #define WIFI_RETRY_MS   5000UL    // thử lại WiFi mỗi 5 giây
 #define WIFI_MAX_WAIT   15000UL   // mỗi lần thử chờ tối đa 15 giây
 
-// [N4] Watchdog: nếu vòng loop() bị treo quá 15 giây -> tự khởi động lại
+// [N4] Watchdog: nếu vòng loop() bị treo quá 30 giây -> tự khởi động lại
 //      ESP32. Cơ chế: Task Watchdog của ESP-IDF (xem hàm wdtSetup/wdtKick).
-#define WDT_TIMEOUT_S   15       // giây - quá ngưỡng này thì reset
+//      (Tham số thực tế khai báo ở phần [N4] bên dưới, tránh khai báo trùng.)
 
 // ============================== HÀM TIỆN ÍCH ================================
 int slotIndex(String id) {
@@ -831,7 +842,7 @@ void onMsg(char* topic, byte* p, unsigned len) {
 // Ý nghĩa thực tế: nếu firmware bị treo (deadlock khi đọc Serial, OLED treo,
 // vòng lặp vô hạn...) thì thiết bị TỰ PHỤC HỒI thay vì "chết lặng" im
 // lặng. Đây chính là tiêu chí "xử lý mất kết nối / độ ổn định" của Lab 1.
-#define WDT_TIMEOUT_S   15       // giây - quá ngưỡng này thì reset
+#define WDT_TIMEOUT_S   30       // giây - quá ngưỡng này thì reset
 bool wdtEnabled = false;         // watchdog đã bật thành công hay chưa
 
 // Bật watchdog cho vòng loop() chính
