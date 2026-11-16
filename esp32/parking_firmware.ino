@@ -76,6 +76,17 @@ bool irShadow[NUM_SLOTS] = {false, false, false, false, false, false};
 // O nao dang duoc dieu khien thu cong (lenh ENTER/EXIT tu Serial).
 // Vong lap doc IR bo qua cac o nay de khong ghi de lenh cua nguoi dung.
 bool manualMode[NUM_SLOTS] = {false, false, false, false, false, false};
+
+// --- Loc nhieu (debounce) cho cam bien IR ---
+// Nut bam co tiep xuc co "bounce" (tieng dap khi nhan) -> tin hieu ve 2 lan
+// lien tiep trong vai chuc ms. Neu khong loc, se ghi nhan "xe vao" roi
+// ngay "xe ra" -> phat sinh hoa don sai.
+// Quy tac: tin hieu moi chi duoc chap nhan sau khi giu lien tuc
+// DEBOUNCE_MS (300ms). Do la 2 lan doc cam bien o 100ms.
+#define DEBOUNCE_MS 300
+bool irRaw[NUM_SLOTS] = {false, false, false, false, false, false};   // tin hieu thô
+bool irStable[NUM_SLOTS] = {false, false, false, false, false, false}; // tin hieu da loc
+unsigned long irChangeAt[NUM_SLOTS] = {0, 0, 0, 0, 0, 0};            // luc tin hieu thay doi
 String gateState = "CLOSED";
 String gateOpenedBy = "";
 unsigned long gateOpenedAt = 0;
@@ -371,7 +382,8 @@ void handleBooking(String slot, String user, String act, String req) {
   else if (act == "exit") {
     // App/Serial xac nhan xe ra -> tinh phi, tra o ve che do cam bien binh thuong
     manualMode[i] = false;
-    irShadow[i] = (digitalRead(IR_PIN[i]) == LOW);
+    bool v = (digitalRead(IR_PIN[i]) == LOW);
+    irShadow[i] = v; irRaw[i] = v; irStable[i] = v;
     carLeaves(i);
     pubBookingState(slot, "FREE", user, req, true, "Da ghi nhan xe ra");
   }
@@ -407,7 +419,9 @@ void setup() {
 
   for (int i = 0; i < NUM_SLOTS; i++) {
     pinMode(IR_PIN[i], INPUT_PULLUP);
-    irShadow[i] = (digitalRead(IR_PIN[i]) == LOW);
+    bool v = (digitalRead(IR_PIN[i]) == LOW);
+    irRaw[i] = v; irStable[i] = v; irShadow[i] = v;
+    irChangeAt[i] = millis();
   }
   pinMode(BUZZER_PIN, OUTPUT);
   barrier.attach(SERVO_PIN); barrier.write(0);
@@ -534,19 +548,25 @@ void loop() {
     mqtt.loop();
   }
 
-  // --- Doc cam bien IR 6 o ---
-  // So sanh voi irShadow (khong phai slots[].occupied) de lenh thu cong
-  // (ENTER/EXIT qua Serial) khong bi vong lap nay ghi de ngay.
+  // --- Doc cam bien IR 6 o (co loc nhieu debounce) ---
+  // Buoc 1: doc tin hieu tho moi 50ms
+  // Buoc 2: chi chap nhan khi tin hieu giu lien tuc DEBOUNCE_MS (300ms)
+  //         -> loai bo hien tuong bounce cua nut bam
+  // Buoc 3: khi trang thai da on dinh -> ghi nhan xe vao / xe ra
   static unsigned long lastRead = 0;
-  if (millis() - lastRead > 200) {
+  if (millis() - lastRead > 50) {
     lastRead = millis();
     bool ch = false;
     for (int i = 0; i < NUM_SLOTS; i++) {
-      bool occ = (digitalRead(IR_PIN[i]) == LOW);
-      if (occ == irShadow[i]) continue;   // khong doi -> bo qua
-      irShadow[i] = occ;
-      if (manualMode[i]) continue;        // o do nguoi dung dieu khien -> bo qua
-      if (occ) {
+      bool raw = (digitalRead(IR_PIN[i]) == LOW);
+      if (raw != irRaw[i]) {
+        irRaw[i] = raw;
+        irChangeAt[i] = millis();
+      } else if (raw != irStable[i] && millis() - irChangeAt[i] >= DEBOUNCE_MS) {
+        // Da giu on dinh >= 300ms -> chap nhan trang thai moi
+        irStable[i] = raw;
+        if (manualMode[i]) { irShadow[i] = raw; continue; }  // o thu cong -> bo qua
+        if (raw) {
           // Xe vao: giu user da dat cho neu co
           String u = slots[i].reservedBy;
           carEnters(i, u);
@@ -556,6 +576,7 @@ void loop() {
         } else {
           carLeaves(i);
         }
+        irShadow[i] = raw;
         ch = true;
       }
     }
