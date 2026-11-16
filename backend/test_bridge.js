@@ -1,5 +1,5 @@
 // Test MQTT-over-WebSocket bridge (giống hệt App React Native kết nối)
-// Usage: node backend/test_bridge.js
+// Usage: node backend/test_bridge.js [wsUrl]
 import mqtt from "mqtt";
 import { WebSocket } from "ws";
 
@@ -11,6 +11,9 @@ const TOPICS = [
 ];
 
 const got = [];
+const REQ = "bridge-test-" + Date.now();
+const SLOT = "P" + (1 + Math.floor(Math.random() * 6));
+
 const client = mqtt.connect(URL, {
   clientId: "test-bridge-" + Date.now(),
   reconnectPeriod: 0,
@@ -19,10 +22,10 @@ const client = mqtt.connect(URL, {
 });
 
 const timer = setTimeout(() => {
-  console.log("TIMEOUT - khong nhan duoc du lieu qua bridge");
-  console.log("Da nhan:", got.length, JSON.stringify(got.slice(0, 5)));
+  console.log("TIMEOUT - khong nhan duoc phan hoi dung requestId");
+  console.log("Da nhan:", got.length, "topic:", got.join(", "));
   process.exit(1);
-}, 20000);
+}, 25000);
 
 client.on("connect", () => {
   console.log("[OK] WebSocket/MQTT connect OK ->", URL);
@@ -37,18 +40,20 @@ client.on("message", (topic, buf) => {
   got.push(topic);
   console.log("[MSG]", topic, JSON.stringify(d).slice(0, 90));
 
-  if (topic === "parking/slots/snapshot") {
-    // Publish ngược lại để kiểm tra chiều App -> Broker
-    const reqId = "bridge-test-" + Date.now();
-    client.publish("parking/booking/P1/set", JSON.stringify({
-      slot: "P1", user: "BRIDGE01", action: "reserve", requestId: reqId,
+  // Chi khi nao nhan duoc snapshot thi moi publish lenh de thu vong tron
+  if (topic === "parking/slots/snapshot" && !d.__sent) {
+    d.__sent = true;
+    console.log("[ACT] publish reserve " + SLOT + " requestId=" + REQ);
+    client.publish(`parking/booking/${SLOT}/set`, JSON.stringify({
+      slot: SLOT, user: "BRIDGE01", action: "reserve", requestId: REQ,
     }), { qos: 1 });
-    console.log("[ACT] Da publish lenh reserve P1");
   }
-  if (topic.includes("/booking/") && d.requestId) {
-    console.log(d.ok ? "[OK] Bridge -> Broker -> App: " : "[FAIL] ", "nhan phan hoi:", d.msg, "ok=" + d.ok);
+
+  // Phai khop requestId moi chinh xac la phan hoi cua lenh ta vua gui
+  if (topic.includes("/booking/") && d.requestId === REQ) {
     clearTimeout(timer);
-    console.log("\n=== KET QUA: BRIDGE HOAT DONG ===");
+    console.log(d.ok ? "[OK] Bridge -> Broker -> App: " + d.msg : "[FAIL] " + d.msg);
+    console.log("\n=== KET QUA: BRIDGE HOAT DONG (2 chieu) ===");
     console.log("Tong message nhan duoc:", got.length);
     process.exit(d.ok ? 0 : 1);
   }

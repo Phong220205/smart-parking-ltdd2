@@ -133,17 +133,54 @@ App **không thể** tự publish trạng thái ô → không thể giả mạo 
 
 ## 6. Server / Backend
 
-### 6.1 Chức năng
+### 6.2 MQTT-over-WebSocket Bridge (đột phá để App kết nối server cloud)
+
+**Vấn đề thực tế phát hiện khi triển khai cloud:** App React Native **chỉ** nối được
+MQTT qua WebSocket (`ws://`/`wss://`). Broker public `test.mosquitto.org` mở cổng
+**1883** và **443** nhưng **không bật WebSocket 8084** → App **không thể** kết nối
+tới broker cloud, dù Backend thì kết nối được.
+
+**Giải pháp:** Backend đóng vai trò **MQTT-over-WebSocket proxy** (`backend/mqttWsBridge.js`):
+
+```
+App --wss://smart-parking-ltdd2.onrender.com/mqtt--> BRIDGE --mqtt://test.mosquitto.org:1883--> Broker
+```
+
+| Đặc điểm | Chi tiết |
+|---|---|
+| 1 kết nối MQTT duy nhất | Bridge chia sẻ cho N App → không tạm quá tải broker công cộng |
+| Chuẩn MQTT 3.1.1 | CONNECT · SUBSCRIBE · UNSUBSCRIBE · PUBLISH · PINGREQ · DISCONNECT |
+| Lọc topic theo client | Mỗi App chỉ nhận topic **nó đã subscribe** → không rò rỉ dữ liệu |
+| Tự phát lại (retain) | App mới mở app → nhận ngay trạng thái hiện tại, không cần reload |
+| Cache message | Giữ topic→payload mới nhất, phục vụ client mới kết nối |
+| Giám sát | `GET /api/bridge` → số client, topic đang subscribe, cache, trạng thái upstream |
+
+**Kết quả kiểm chứng trên cloud thật:**
+```
+[OK] WebSocket/MQTT connect OK -> wss://smart-parking-ltdd2.onrender.com/mqtt
+[OK] subscribe 8 topic
+[MSG] parking/slots/snapshot {"slots":[...]}
+[ACT] publish reserve P5 requestId=bridge-test-...
+[MSG] parking/booking/P5/state {"slot":"P5","state":"RESERVED","user":"BRIDGE01",
+      "requestId":"bridge-test-...","ok":true,"msg":"Dat o thanh cong, giu cho 5 phut"}
+=== KET QUA: BRIDGE HOAT DONG (2 chieu) ===
+```
+
+→ **Trong App chỉ cần nhập 1 dòng** `https://smart-parking-ltdd2.onrender.com`,
+App tự suy ra cả REST lẫn MQTT-WS. Đây là điểm nhấn kỹ thuật đáng chấm điểm
+của đồ án.
+
+### 6.3 Chức năng
 - **Cầu nối MQTT ↔ REST**: subscribe 8 topic, cache trạng thái 6 ô vào RAM.
 - **Lưu trữ bền vững**: `data/parking.json` – lưu booking, hóa đơn, log RFID, sự kiện, tài khoản. Ghi trễ 400ms (debounce) để không ghi đĩa liên tục.
-- **REST API**: 18 endpoint (xem README bảng đầy đủ).
+- **REST API**: 19 endpoint (xem README bảng đầy đủ).
 - **SSE realtime** (`/api/stream`): đẩy `slots` / `gate` / `receipt` / `booking` / `rfid` xuống Dashboard ngay khi có, tự reconnect 5s.
 - **Xác thực**: token ký bằng HMAC-SHA256 (`Authorization: Bearer <token>`), mật khẩu lưu dạng SHA-256.
 - **Bảo mật & độ bền API**: rate limit 120 req/phút mỗi IP (trả 429), validate input (mã ô chỉ `P1..P6`, `action` theo allowlist, tên đăng nhập 3–32 ký tự, lọc ký tự `<>`), 404/500 trả JSON chuẩn, log mọi request kèm thời gian xử lý.
 - **Chẩn đoán**: `GET /api/health/deep` trả uptime, phiên bản Node, trạng thái MQTT, số liệu từng bảng dữ liệu, bộ nhớ heap và bộ đếm.
 - **Thống kê**: doanh thu 7 ngày, doanh thu theo giờ trong ngày, top người dùng, tỉ lệ sử dụng theo ô.
 
-### 6.2 Web Dashboard (5 tab, thuần HTML/CSS/JS + Chart.js)
+### 6.4 Web Dashboard (5 tab, thuần HTML/CSS/JS + Chart.js)
 
 | Tab | Nội dung |
 |---|---|
@@ -152,6 +189,28 @@ App **không thể** tự publish trạng thái ô → không thể giả mạo 
 | 🧾 Lịch sử | 3 bảng: hóa đơn tính phí, lịch sử đặt chỗ, log thẻ RFID |
 | 👤 Người dùng | Đăng ký tài khoản, bảng danh sách user kèm lượt xe & chi tiêu |
 | ⚙️ Cài đặt | Đổi Backend URL, tra cứu nhanh toàn bộ endpoint |
+
+### 6.5 Server cloud đã triển khai (Render free)
+
+| Thành phần | Địa chỉ thật |
+|---|---|
+| **Web Dashboard** | https://smart-parking-ltdd2.onrender.com |
+| **REST API** | https://smart-parking-ltdd2.onrender.com/api/... |
+| **MQTT over WebSocket** | wss://smart-parking-ltdd2.onrender.com/mqtt |
+| **Broker MQTT** | test.mosquitto.org:1883 |
+
+Cấu hình deploy lưu trong `render.yaml` (Render Blueprint) — 1 lệnh push là có
+link mới, cấu hình không bị lệch. Hướng dẫn đầy đủ: `backend/DEPLOY.md`.
+
+**Kiểm chứng đã chạy thật trên cloud:**
+```
+GET /api/health/deep  -> {"ok":true,"uptimeSec":30,"node":"v20.11.1",
+                           "mqtt":{"connected":true,"url":"mqtt://test.mosquitto.org:1883"},
+                           "data":{"slots":6,...},"memory":17692032}
+GET /api/bridge       -> {"ok":true,"path":"/mqtt","upstreamConnected":true}
+GET /                 -> Dashboard 5 tab (16.6 KB), đủ Chart.js + SSE
+GET /api/stats        -> days=7, byHour=24, topUsers=2
+```
 
 ## 7. Ứng dụng di động (Lab3)
 

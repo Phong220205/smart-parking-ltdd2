@@ -150,7 +150,7 @@ RFID: --
 - **Nguyên nhân**: hàm `b64url(buf)` gọi `buf.toString("base64url")` trên **String** (chưa encode Buffer) → token sai.
 - **Sửa**: `b64url(buf) { return Buffer.from(buf).toString("base64url"); }`.
 
-## 11. Bộ kiểm thử tự động (Automated E2E Test Suite) – 36/36 PASS
+## 11. Bộ kiểm thử tự động (Automated E2E Test Suite) – 38/38 PASS
 
 Tạo file `simulator/test_suite.py` chạy **end-to-end** toàn bộ pipeline
 (Broker → Simulator → Backend → Dashboard → App API) với **32 checkpoint**:
@@ -195,13 +195,15 @@ python simulator/test_suite.py
 [PASS] Endpoint la tra 404 JSON  -- status=404
 [PASS] Validate ma o sai -> 400  -- 400
 [PASS] Validate action sai -> 400  -- 400
+[PASS] Endpoint /api/bridge ton tai  -- path=/mqtt
+[PASS] Bridge WebSocket: App -> Broker -> App  -- Tong message nhan duoc: 19
 [PASS] Dashboard HTML phuc vu  -- 16913 bytes
 [PASS] Dashboard co 5 tab
 [PASS] Dashboard co Chart.js
 [PASS] Dashboard co SSE
 [PASS] SSE /api/stream tra du lieu  -- event: hello
 ====================================================================
- KET QUA: 36/36 PASS
+ KET QUA: 38/38 PASS
 ====================================================================
 ```
 
@@ -228,6 +230,46 @@ python simulator/test_suite.py
 - **Nguyên nhân**: hàm `get()` trong test chỉ bắt `Exception` chung → mất `HTTPError`,
   nên không đọc được `e.code`.
 - **Sửa**: bắt riêng `urllib.error.HTTPError` và parse body kèm `__status`.
+
+### Bug 8 – Route `/api/bridge` bị middleware 404 chặn (đã sửa)
+- **Hiện tượng**: `GET /api/bridge` trả `{"ok":false,"error":"Khong tim thay endpoint"}`.
+- **Nguyên nhân**: route được đăng ký **sau** `app.use("/api", ...404...)`.
+- **Sửa**: đăng ký route `/api/bridge` **trước** middleware 404.
+
+### Bug 9 – App không kết nối được broker cloud (đã sửa — vấn đề lớn nhất)
+- **Hiện tượng**: App React Native không kết nối được broker cloud dù Backend thì kết nối được.
+- **Nguyên nhân**: App chỉ nối được MQTT qua **WebSocket**; broker public
+  `test.mosquitto.org` mở cổng **1883** và **443** nhưng **không bật WebSocket 8084**.
+- **Sửa**: viết `backend/mqttWsBridge.js` — Backend làm proxy MQTT-over-WebSocket
+  (`wss://<server>/mqtt` → `mqtt://<broker>:1883`), 1 kết nối MQTT duy nhất chia sẻ
+  cho N App, lọc topic theo client, tự phát lại retain, có cache message.
+  → **Trong App chỉ cần nhập 1 URL server**, tự suy ra cả REST lẫn MQTT-WS.
+
+## 12. Server cloud đã deploy thật (Render free)
+
+| Thành phần | Địa chỉ | Kết quả kiểm chứng |
+|---|---|---|
+| Web Dashboard | https://smart-parking-ltdd2.onrender.com | ✅ 16.6 KB, đủ 5 tab + Chart.js + SSE |
+| REST API | `.../api/health` | ✅ `{"ok":true,"mqtt":true,"slots":6}` |
+| Health deep | `.../api/health/deep` | ✅ uptime, node v20.11.1, số liệu, heap |
+| Bridge WS | `wss://smart-parking-ltdd2.onrender.com/mqtt` | ✅ 2 chiều, đúng `requestId` |
+| Thống kê | `.../api/stats` | ✅ days=7, byHour=24, topUsers |
+| Lưu trữ | `/tmp/parking.json` | ✅ Render free không giữ file lâu dài |
+
+Cấu hình deploy: `render.yaml` (Render Blueprint) — cấu hình không bị lệch khi push.
+Hướng dẫn đầy đủ: `backend/DEPLOY.md`.
+
+**Log test bridge trên cloud thật:**
+```
+[OK] WebSocket/MQTT connect OK -> wss://smart-parking-ltdd2.onrender.com/mqtt
+[OK] subscribe 8 topic
+[MSG] parking/slots/snapshot {"slots":[...]}
+[ACT] publish reserve P5 requestId=bridge-test-1794847759068
+[MSG] parking/booking/P5/state {"slot":"P5","state":"RESERVED","user":"BRIDGE01",
+      "requestId":"bridge-test-1794847759068","ok":true,
+      "msg":"Dat o thanh cong, giu cho 5 phut"}
+=== KET QUA: BRIDGE HOAT DONG (2 chieu) ===
+```
 
 ## 12. Nâng cấp chất lượng dịch vụ (bổ sung)
 
@@ -265,8 +307,10 @@ Chạy tự động mỗi lần push lên `master` → badge CI trong README là
 | Web Dashboard 5 tab | ✅ biểu đồ + 3 bảng lịch sử + quản lý user |
 | App React Native 4 tab | ✅ cú pháp JSX sạch (`@babel/parser`), sẵn sàng chạy Expo Go |
 | Báo cáo + slide | ✅ `.docx` 44 KB, `.pptx` 43 KB (13 slide), sinh tự động từ markdown |
-| **Bộ test tự động** | ✅ `simulator/test_suite.py` — **36/36 PASS** |
+| **Bộ test tự động** | ✅ `simulator/test_suite.py` — **38/38 PASS** |
 | **CI GitHub Actions** | ✅ `.github/workflows/ci.yml` — 2 job (test E2E + app syntax) |
+| **MQTT-WS Bridge** | ✅ 2 chiều, đúng `requestId` — local + cloud |
+| **Server cloud** | ✅ https://smart-parking-ltdd2.onrender.com (Render free) |
 
 ## 15. Việc còn lại (cần làm tay)
 

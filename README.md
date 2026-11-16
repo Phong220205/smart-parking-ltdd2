@@ -2,11 +2,13 @@
 Mô phỏng 100% – không cần phần cứng thật.
 
 [![CI - Smart Parking](https://github.com/Phong220205/smart-parking-ltdd2/actions/workflows/ci.yml/badge.svg)](https://github.com/Phong220205/smart-parking-ltdd2/actions/workflows/ci.yml)
-![Tests](https://img.shields.io/badge/tests-36%2F36%20PASS-brightgreen)
+![Tests](https://img.shields.io/badge/tests-38%2F38%20PASS-brightgreen)
 ![License](https://img.shields.io/badge/LTDD2-Tr%C4%B0%E1%BB%9D%20H%E1%BB%8C%20%C4%90%E1%BA%A4NG%20%C3%81-blue)
 
-## 1. Kiến trúc
+**Server cloud đã deploy**: https://smart-parking-ltdd2.onrender.com  
+(Mở trực tiếp = Web Dashboard 5 tab. App React Native chỉ cần dán link này là chạy.)
 
+## 1. Kiến trúc
 ```
 [ESP32 thật / Wokwi / simulator Python]  <--MQTT 1883-->  [Mosquitto Broker]
    6 ô P1..P6 (IR), RFID RC522, Servo barrier, OLED SSD1306
@@ -129,22 +131,56 @@ Dữ liệu lưu ở `data/parking.json` (tự tạo, không cần database).
 | **404 / 500 JSON** | Mọi lỗi trả về JSON chuẩn `{ok:false, error}` |
 | **Request log** | Ghi log mọi request kèm status + thời gian xử lý |
 
-## 4.1 Kiểm thử tự động (Automated E2E Test Suite)
+## 4.1 MQTT-over-WebSocket Bridge (App ↔ Broker qua 1 URL duy nhất)
+
+**Vấn đề:** App React Native chỉ nối được MQTT qua WebSocket (`ws://`/`wss://`).
+Broker public `test.mosquitto.org` mở cổng **1883** + **443** nhưng **không bật
+WebSocket 8084** → App không kết nối được broker cloud.
+
+**Giải pháp:** `backend/mqttWsBridge.js` — Backend làm proxy MQTT-over-WebSocket:
+
+```
+App --wss://smart-parking-ltdd2.onrender.com/mqtt--> BRIDGE --mqtt://test.mosquitto.org:1883--> Broker
+```
+
+| Đặc điểm | Chi tiết |
+|---|---|
+| 1 kết nối MQTT duy nhất | Bridge chia sẻ cho N App → không tạm quá tải broker |
+| Chuẩn MQTT 3.1.1 | CONNECT / SUBSCRIBE / UNSUBSCRIBE / PUBLISH / PINGREQ / DISCONNECT |
+| Lọc topic theo client | Mỗi App chỉ nhận topic **nó đã subscribe** (không rò rỉ dữ liệu) |
+| Tự phát lại (retain) | App mới mở app → nhận ngay trạng thái hiện tại |
+| Cache message | Giữ topic→payload mới nhất để phục vụ client mới |
+| Xem trạng thái | `GET /api/bridge` → số client, topic đang subscribe, cache, trạng thái upstream |
+
+**Trong App chỉ cần nhập 1 dòng** (tab ⚙️ Cài đặt kết nối → Link server):
+```
+https://smart-parking-ltdd2.onrender.com
+```
+App tự suy ra REST (`/api/...`) và MQTT-WS (`wss://.../mqtt`).
+
+Test bridge 2 chiều:
+```powershell
+node backend/test_bridge.js wss://smart-parking-ltdd2.onrender.com/mqtt
+# → === KET QUA: BRIDGE HOAT DONG (2 chieu) ===
+```
+
+## 4.2 Kiểm thử tự động (Automated E2E Test Suite)
 
 ```powershell
 python simulator/test_suite.py
 ```
 
-Bộ test chạy **36 checkpoint** end-to-end xuyên suốt Broker → Simulator → Backend → Dashboard:
+Bộ test chạy **38 checkpoint** end-to-end xuyên suốt Broker → Simulator → Backend → Dashboard:
 
 ```
-KET QUA: 36/36 PASS
+KET QUA: 38/38 PASS
 ```
 
 - Tự bật/tắt simulator ở chế độ `quiet` (tự thu hồi tiến trình khi kết thúc).
 - Tự sinh tài khoản thử nghiệm không trùng lặp → chạy lại nhiều lần vẫn PASS.
 - Bao phủ: hạ tầng · chống trùng đặt chỗ · vòng đời xe · tính phí · barrier ·
-  thống kê · xác thực 401 · validate input · lịch sử · Dashboard 5 tab · SSE.
+  thống kê · xác thực 401 · validate input · lịch sử · **bridge MQTT-WS 2 chiều** ·
+  Dashboard 5 tab · SSE.
 
 **CI tự động trên GitHub Actions** (`.github/workflows/ci.yml`): mỗi lần push sẽ
 tự dựng Mosquitto + Backend + chạy đủ 36 checkpoint, đồng thời kiểm tra syntax

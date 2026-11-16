@@ -82,6 +82,16 @@ ESP32 (thật/Wokwi)  ──MQTT 1883──▶  Mosquitto Broker  ──WS 9001�
 - **Dashboard 5 tab**: Sơ đồ bãi · Thống kê (Chart.js) · Lịch sử · Người dùng · Cài đặt.
 - *Gợi ý hình: ảnh Dashboard tab Thống kê (biểu đồ cột + đường + tròn).*
 
+### Slide 8b – MQTT-over-WebSocket Bridge & Server cloud (điểm nhấn kỹ thuật)
+- **Vấn đề thật**: App React Native chỉ nối MQTT qua **WebSocket**; broker public
+  mở 1883 + 443 nhưng **không bật WS 8084** → App không kết nối được broker cloud.
+- **Giải pháp**: Backend làm proxy `wss://<server>/mqtt` → `mqtt://<broker>:1883`.
+- **1 kết nối MQTT duy nhất** chia sẻ cho N App · lọc topic theo client · tự phát lại retain · cache message.
+- **Server cloud thật (Render free)**: `https://smart-parking-ltdd2.onrender.com`
+  → REST + SSE + Dashboard + bridge, tất cả trong **1 URL duy nhất**.
+- **Trong App chỉ nhập 1 dòng** → App tự suy ra REST + MQTT-WS.
+- *Gợi ý hình: sơ đồ App → Bridge → Broker + ảnh Dashboard trên điện thoại mở link cloud.*
+
 ### Slide 9 – Ứng dụng di động (Lab3)
 - **4 tab**: 🅿️ Bãi · 🧾 Lịch sử · 📊 Thống kê · 👤 Tài khoản.
 - Màu ô: xanh trống / đỏ có xe / vàng bạn đặt / cam đã đặt.
@@ -96,8 +106,8 @@ ESP32 (thật/Wokwi)  ──MQTT 1883──▶  Mosquitto Broker  ──WS 9001�
 - **Barrier tự đóng sau 5 giây**.
 - *Gợi ý hình: sơ đồ luồng booking.*
 
-### Slide 11 – Kiểm thử tự động (36/36 PASS)
-- **Bộ test end-to-end 1 lệnh**: `python simulator/test_suite.py` → `KET QUA: 36/36 PASS`.
+### Slide 11 – Kiểm thử tự động (38/38 PASS)
+- **Bộ test end-to-end 1 lệnh**: `python simulator/test_suite.py` → `KET QUA: 38/38 PASS`.
 - Tự bật/tắt simulator `quiet`, tự sinh tài khoản thử nghiệm không trùng lặp.
 | Nhóm | Checkpoint | KQ |
 |---|---|---|
@@ -108,11 +118,12 @@ ESP32 (thật/Wokwi)  ──MQTT 1883──▶  Mosquitto Broker  ──WS 9001�
 | Thống kê | Doanh thu 7 ngày · 24 mốc giờ · top user | ✅ |
 | Xác thực | Đăng ký/đăng nhập · nạp tiền · **sai mật khẩu → 401** | ✅ |
 | Dịch vụ | `health/deep` · 404 JSON · **validate sai → 400** | ✅ |
+| **Bridge WS** | **App → Broker → App, đúng `requestId`** | ✅ |
 | Dashboard | HTML · 5 tab · Chart.js · **SSE realtime** | ✅ |
 
-- **CI GitHub Actions**: mỗi lần push tự chạy lại 36 checkpoint + kiểm tra syntax firmware/backend/app.
-  *Kết quả thực tế trên GitHub: `KET QUA: 36/36 PASS` + `3/3 file syntax OK`.*
-- **6 bug đã tìm & sửa**: OLED trắng xanh · lệnh ENTER bị IR ghi đè · nhiễu bounce nút bấm · token JWT sai · barrier không lưu `db.gate` · test SSE đọc theo byte bị treo.
+- **CI GitHub Actions**: mỗi lần push tự chạy lại 38 checkpoint + kiểm tra syntax firmware/backend/app.
+  *Kết quả thực tế trên GitHub: `KET QUA: 38/38 PASS` + `3/3 file syntax OK`.*
+- **8 bug đã tìm & sửa**: OLED trắng xanh · lệnh ENTER bị IR ghi đè · nhiễu bounce nút bấm · token JWT sai · barrier không lưu `db.gate` · test SSE đọc theo byte bị treo · test 404 mất mã HTTP · bridge sai thứ tự route.
 - *Gợi ý hình: bảng kết quả test + ảnh OLED đang hiển thị.*
 
 ### Slide 12 – Kết luận & hướng phát triển
@@ -120,7 +131,8 @@ ESP32 (thật/Wokwi)  ──MQTT 1883──▶  Mosquitto Broker  ──WS 9001�
 - **Hạn chế**: chưa có phần cứng thật, thanh toán online thật, lưu JSON thay database.
 - **Hướng phát triển**: thanh toán QR · camera nhận diện biển số (ESP32-CAM + OCR) · dự báo chỗ trống bằng ML · phân quyền vai trò · push notification.
 - **Link repo + QR video demo**.
-- *Gợi ý hình: QR code GitHub + QR YouTube.*
+- **Server cloud**: https://smart-parking-ltdd2.onrender.com (mở được ngay, không cần cài gì).
+- *Gợi ý hình: QR code GitHub + QR YouTube + QR server cloud.*
 
 ---
 
