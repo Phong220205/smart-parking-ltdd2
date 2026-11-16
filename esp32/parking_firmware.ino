@@ -74,6 +74,9 @@
 // ---------------------------------------------------------------------------
 #include <esp_system.h>   // esp_random() - sinh khóa bắt tay & mặt nạ ngẫu nhiên
 
+// Khai báo trước để lớp MqttWsClient gọi được (định nghĩa ở phần Watchdog)
+void wdtKick();
+
 class MqttWsClient : public Client {
 public:
   MqttWsClient(WiFiClientSecure &tls, const char *host, uint16_t port, const char *path)
@@ -139,8 +142,20 @@ private:
   int handshake() {
     _wsReady = false; _rxLen = _rxPos = _rawLen = 0;
     Serial.printf("[WS] Bat tay wss://%s%s ...\n", _host, _path);
-    if (!_tls.connect(_host, _port)) { Serial.println("[WS] TLS connect that bai"); return 0; }
-    _tls.setTimeout(10000);
+
+    // Giới hạn thời gian bắt tay: không được vượt quá ngưỡng Watchdog (15s)
+    // vì hàm này chạy đồng bộ trong setup()/loop().
+    const unsigned long DEADLINE = millis() + 6000UL;
+
+    _tls.setTimeout(3000);
+    bool tlsOk = false;
+    while (millis() < DEADLINE && !tlsOk) {
+      tlsOk = _tls.connect(_host, _port);
+      wdtKick();                 // giữ Watchdog "sống" trong lúc chờ mạng
+      if (!tlsOk) delay(50);
+    }
+    if (!tlsOk) { Serial.println("[WS] TLS connect that bai"); return 0; }
+    _tls.setTimeout(2000);
 
     String req;
     req.reserve(320);
@@ -157,9 +172,8 @@ private:
     }
 
     // Đọc header phản hồi tới khi thấy dòng trống kết thúc
-    unsigned long t0 = millis();
     int end = -1;
-    while (millis() - t0 < 10000) {
+    while (millis() < DEADLINE) {
       end = findHeaderEnd();
       if (end > 0) break;
       if (_tls.available()) {
@@ -168,6 +182,7 @@ private:
         if (_rawLen < (int)sizeof(_raw)) _raw[_rawLen++] = (uint8_t)c;
       } else {
         delay(2);
+        wdtKick();               // giữ Watchdog "sống" trong lúc chờ phản hồi
       }
     }
     if (end <= 0) { Serial.println("[WS] Khong nhan duoc header phan hoi"); _tls.stop(); return 0; }
@@ -830,7 +845,12 @@ void wdtSetup() {
     .idle_core_mask = 0,
     .trigger_panic = true
   };
-  esp_task_wdt_init(&cfg);
+  // Lỗi "TWDT already initialized" xảy ra khi ESP-IDF đã bật WDT sẵn (Arduino
+  // core 3.x tự bật cho task idle). Khi đó ta chỉ cần CẤU HÌNH LẠI (reconfigure)
+  // đúng ngưỡng thời gian ta mong muốn.
+  if (esp_task_wdt_init(&cfg) != ESP_OK) {
+    esp_task_wdt_reconfigure(&cfg);
+  }
 #else
   esp_task_wdt_init(WDT_TIMEOUT_S, true);
 #endif
