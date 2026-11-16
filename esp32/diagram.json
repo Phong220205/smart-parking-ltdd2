@@ -10,7 +10,7 @@
     { "type": "wokwi-pushbutton", "id": "ir4", "top": 130, "left": -230, "attrs": { "label": "P4 - O so 4" } },
     { "type": "wokwi-pushbutton", "id": "ir5", "top": 210, "left": -230, "attrs": { "label": "P5 - O so 5" } },
     { "type": "wokwi-pushbutton", "id": "ir6", "top": 290, "left": -230, "attrs": { "label": "P6 - O so 6" } },
-    { "type": "wokwi-lcd1602", "id": "lcd", "top": -210, "left": 60, "attrs": {} },
+    { "type": "wokwi-lcd1602", "id": "lcd", "top": -110, "left": 60, "attrs": {} },
     { "type": "wokwi-mfrc522", "id": "rfid", "top": 40, "left": 380, "attrs": {} },
     { "type": "wokwi-servo", "id": "servo", "top": -130, "left": 390, "attrs": { "label": "Barrier" } },
     { "type": "wokwi-buzzer", "id": "buzz", "top": 240, "left": 390, "attrs": { "label": "Coi bao dong" } }
