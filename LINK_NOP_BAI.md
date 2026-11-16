@@ -2,7 +2,7 @@
 
 | # | Ô trong hình GV | Link | Trạng thái |
 |---|---|---|---|
-| 1 | Link Github Project | https://github.com/Phong220205/smart-parking-ltdd2 | ✅ có |
+| 1 | Link Github Project | https://github.com/Phong220205/smart-parking-ltdd2 | ✅ có (CI badge xanh: 36/36 PASS) |
 | 2 | Link github source Arduino | https://github.com/Phong220205/smart-parking-ltdd2/blob/master/esp32/parking_firmware.ino | ✅ có |
 | 3 | Link Wokwi | https://wokwi.com/projects/480840614046528513 | ✅ có (firmware V2 + debounce đã nạp, build OK) |
 | 4 | Link source code Backend | https://github.com/Phong220205/smart-parking-ltdd2/tree/master/backend | ✅ có |
