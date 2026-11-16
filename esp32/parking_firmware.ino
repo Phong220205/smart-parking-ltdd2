@@ -2,6 +2,7 @@
 // Thu vien Wokwi: PubSubClient, ArduinoJson, ESP32Servo, MFRC522, LiquidCrystal I2C
 
 #include <WiFi.h>
+#include <Wire.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <ESP32Servo.h>
@@ -97,6 +98,7 @@ void setup(){
   for(int i=0;i<NUM_SLOTS;i++) pinMode(IR_PIN[i],INPUT_PULLUP);
   pinMode(BUZZER_PIN,OUTPUT);
   barrier.attach(SERVO_PIN); barrier.write(0);
+  Wire.begin(21, 22);
   lcd.init(); lcd.backlight();
   lcd.clear(); lcd.setCursor(0,0); lcd.print("Smart Parking");
   lcd.setCursor(0,1); lcd.print("WiFi...");
