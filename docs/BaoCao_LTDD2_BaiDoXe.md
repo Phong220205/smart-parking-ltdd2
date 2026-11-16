@@ -194,9 +194,36 @@ fee = ceil(minutes / 60) × 3000đ               nếu minutes > 30
 ### 8.3 Giữ chỗ 5 phút
 Đặt chỗ nhưng xe không vào → sau 5 phút hệ thống tự hủy, publish `EXPIRED`, giải phóng ô cho người khác.
 
-## 9. Kiểm thử (đã chạy thật ngày 16/11/2026)
+## 9. Kiểm thử tự động (đã chạy thật ngày 16/11/2026)
 
 Môi trường: Docker Desktop 28.5.1, Mosquitto 2.0.22, Node v24.19.0, Python 3.13.9, Chrome.
+
+### 9.1 Bộ kiểm thử end-to-end tự động
+
+Đóng gói toàn bộ quy trình kiểm thử vào **một lệnh** bằng `simulator/test_suite.py`:
+
+```powershell
+python simulator/test_suite.py
+```
+
+Bộ test tự bật/tắt simulator ở chế độ `quiet`, tự sinh tài khoản thử nghiệm không trùng lặp,
+và kiểm tra **32 checkpoint** xuyên suốt chuỗi Broker → Simulator → Backend → Dashboard.
+Kết quả lần chạy cuối: **32/32 PASS**.
+
+| Nhóm | Checkpoint | Kết quả |
+|---|---|---|
+| Hạ tầng | Broker + Backend + MQTT online, đủ 6 ô | ✅ |
+| Nghiệp vụ đặt chỗ | `POST /api/booking`, ô đã đặt đúng user | ✅ |
+| **Chống trùng** | SV02 đặt trùng → `ok=false "O da duoc dat boi SV01"` | ✅ |
+| Vòng đời xe | `POST /api/enter` → occupied; `POST /api/exit` → sinh hóa đơn | ✅ |
+| **Tính phí** | ≤ 30 phút → 0đ; 95 phút → **6000đ** | ✅ |
+| Barrier | `POST /api/gate OPEN` → `gate=OPEN` | ✅ |
+| Thống kê | doanh thu > 0, 7 ngày, 24 mốc giờ, top user | ✅ |
+| Xác thực | đăng ký, đăng nhập, `me` bằng token, nạp tiền, sai mật khẩu → **401** | ✅ |
+| Lịch sử | hóa đơn, booking, log RFID, log sự kiện, danh sách user | ✅ |
+| Dashboard | HTML phục vụ, 5 tab, Chart.js, SSE | ✅ |
+
+### 9.2 Kiểm thử thủ công bổ sung
 
 | # | Hạng mục | Kết quả | Bằng chứng |
 |---|---|---|---|
@@ -220,7 +247,7 @@ Môi trường: Docker Desktop 28.5.1, Mosquitto 2.0.22, Node v24.19.0, Python 3
 ## 10. Kết quả & Hạn chế
 
 ### Kết quả
-Hệ thống chạy liên thông đủ 4 tầng (thiết bị → broker → backend → ứng dụng), **không cần phần cứng thật**. Đã kiểm chứng bằng test tự động 16 mục, trong đó có các tính năng nâng cấp: tài khoản + token, ví nạp tiền, thống kê doanh thu 7 ngày, biểu đồ, log lịch sử, realtime SSE, tính phí theo thời gian, hết hạn giữ chỗ, mở barrier bằng RFID.
+Hệ thống chạy liên thông đủ 4 tầng (thiết bị → broker → backend → ứng dụng), **không cần phần cứng thật**. Đã kiểm chứng bằng **bộ test tự động 32/32 checkpoint** (chạy bằng 1 lệnh) cộng với các kiểm thử thủ công bổ sung, trong đó có các tính năng nâng cấp: tài khoản + token, ví nạp tiền, thống kê doanh thu 7 ngày, biểu đồ, log lịch sử, realtime SSE, tính phí theo thời gian, hết hạn giữ chỗ, mở barrier bằng RFID.
 
 ### Hạn chế
 - Chưa có phần cứng thật → IR/RFID/Servo mô phỏng bằng Wokwi + simulator. Khi có ESP32 thật chỉ cần đổi `MQTT_HOST` và `WIFI_SSID`.

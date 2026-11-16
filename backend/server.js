@@ -180,10 +180,13 @@ mc.on("message", (topic, buf) => {
       };
     }
     saveDb(); broadcast("slots", db.slots);
-    broadcast("gate", { gate: d.gate });
+    db.gate = d.gate || db.gate;
+    broadcast("gate", { gate: db.gate });
   }
   else if (topic === "parking/gate/barrier/state") {
-    broadcast("gate", { gate: d.gate, openedBy: d.openedBy, ts: d.ts });
+    db.gate = d.gate || db.gate;
+    saveDb();
+    broadcast("gate", { gate: db.gate, openedBy: d.openedBy, ts: d.ts });
   }
   else if (topic === "parking/gate/rfid") {
     pushLog(db.rfidLog, { ...d });
@@ -225,8 +228,7 @@ app.get("/api/health", (req, res) => res.json({
 // GET /api/status -> toan bo trang thai realtime
 app.get("/api/status", (req, res) => res.json({
   slots: db.slots,
-  gate: db.gate || "CLOSED",
-  free: freeCount(),
+  gate: db.gate || "CLOSED",  free: freeCount(),
   total: Object.keys(db.slots).length,
   revenue: db.counters.revenue,
   online: mc.connected && systemOnline,

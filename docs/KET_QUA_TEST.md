@@ -150,7 +150,76 @@ RFID: --
 - **Nguyên nhân**: hàm `b64url(buf)` gọi `buf.toString("base64url")` trên **String** (chưa encode Buffer) → token sai.
 - **Sửa**: `b64url(buf) { return Buffer.from(buf).toString("base64url"); }`.
 
-## 11. Tình trạng cuối cùng
+## 11. Bộ kiểm thử tự động (Automated E2E Test Suite) – 32/32 PASS
+
+Tạo file `simulator/test_suite.py` chạy **end-to-end** toàn bộ pipeline
+(Broker → Simulator → Backend → Dashboard → App API) với **32 checkpoint**:
+
+```powershell
+python simulator/test_suite.py
+```
+
+```
+====================================================================
+ BO KIT KIEM THU SMART PARKING
+====================================================================
+[INFO] Simulator quiet mode PID=17824
+[PASS] Backend + MQTT online  -- {"ok":true,"mqtt":true,"online":true,"slots":6}
+[PASS] Co du 6 o trong bai  -- 6 o
+[PASS] POST /api/booking (dat cho)
+[PASS] P1 da duoc dat cho boi SV01  -- reservedBy=SV01
+[PASS] CHONG TRUNG: SV02 bi tu choi  -- O da duoc dat boi SV01
+[PASS] POST /api/enter (xe vao)
+[PASS] P1 bao occupied
+[PASS] POST /api/exit (xe ra)
+[PASS] Phat sinh hoa don P1  -- 6 hoa don
+[PASS] Tinh phi <= 30 phut = 0 dong  -- [0, 0, 0, 0, 0, 0]
+[PASS] Tinh phi 95 phut = 6000 dong  -- [(95, 6000), ...]
+[PASS] POST /api/gate OPEN
+[PASS] Barrier dang OPEN  -- gate=OPEN
+[PASS] Thong ke doanh thu > 0  -- totalRevenue=36000
+[PASS] Thong ke 7 ngay
+[PASS] Thong ke theo gio (24 muc)
+[PASS] Thong ke top nguoi dung
+[PASS] Dang ky tai khoan
+[PASS] Dang nhap tra token
+[PASS] GET /api/auth/me voi token
+[PASS] Nap tien vi  -- 50000
+[PASS] Sai mat khau -> 401  -- 401
+[PASS] Lich su hoa don
+[PASS] Lich su dat cho
+[PASS] Log RFID
+[PASS] Log su kien
+[PASS] Danh sach nguoi dung
+[PASS] Dashboard HTML phuc vu  -- 16913 bytes
+[PASS] Dashboard co 5 tab
+[PASS] Dashboard co Chart.js
+[PASS] Dashboard co SSE
+[PASS] SSE /api/stream tra du lieu  -- event: hello
+====================================================================
+ KET QUA: 32/32 PASS
+====================================================================
+```
+
+Đặc điểm của bộ test:
+- **Tự quản lý vòng đời**: tự dừng simulator cũ, bật simulator ở `quiet` mode,
+  tự thu hồi tiến trình khi kết thúc (`atexit`).
+- **Không phụ thuộc dữ liệu cũ**: tài khoản test sinh bằng timestamp (`TS<uniq>`)
+  → chạy lại nhiều lần vẫn PASS.
+- **Chống nhiễu**: retry chờ `online=true` tối đa 10 giây sau khi bật simulator.
+
+### Bug 5 – Trạng thái barrier không được lưu lại (đã sửa)
+- **Hiện tượng**: checkpoint "Barrier dang OPEN" báo `gate=CLOSED` sau khi đã `POST /api/gate OPEN`.
+- **Nguyên nhân**: handler MQTT `parking/gate/barrier/state` chỉ `broadcast` sang SSE mà **không gán `db.gate`**.
+- **Sửa**: gán `db.gate = d.gate` + `saveDb()` trong cả handler MQTT và handler snapshot.
+
+### Bug 6 – Test SSE bị treo do đọc theo byte (đã sửa)
+- **Hiện tượng**: checkpoint SSE timeout 8 giây dù server trả dữ liệu đúng.
+- **Nguyên nhân**: `resp.read(150)` chờ **đủ 150 byte**, nhưng gói `hello` chỉ ~48 byte
+  và server giữ kết nối mở → `read()` chờ mãi.
+- **Sửa**: dùng `readline()` 2 dòng (`event:` + `data:`) → trả về ngay.
+
+## 12. Tình trạng cuối cùng
 
 | Hạng mục | Trạng thái |
 |---|---|
@@ -161,8 +230,9 @@ RFID: --
 | Web Dashboard 5 tab | ✅ biểu đồ + 3 bảng lịch sử + quản lý user |
 | App React Native 4 tab | ✅ cú pháp JSX sạch (`@babel/parser`), sẵn sàng chạy Expo Go |
 | Báo cáo + slide | ✅ `.docx` 44 KB, `.pptx` 43 KB (13 slide), sinh tự động từ markdown |
+| **Bộ test tự động** | ✅ `simulator/test_suite.py` — **32/32 PASS** |
 
-## 12. Việc còn lại (cần làm tay)
+## 13. Việc còn lại (cần làm tay)
 
 1. `cd app && npm install && npx expo start` → quét QR bằng Expo Go, chỉnh IP broker trong tab Cài đặt.
 2. Deploy `backend/` lên Render (theo `backend/DEPLOY.md`) → lấy link server cloud lâu dài.

@@ -94,16 +94,20 @@ ESP32 (thật/Wokwi)  ──MQTT 1883──▶  Mosquitto Broker  ──WS 9001�
 - **Barrier tự đóng sau 5 giây**.
 - *Gợi ý hình: sơ đồ luồng booking.*
 
-### Slide 11 – Kiểm thử (16 case đã PASS)
-| # | Hạng mục | KQ |
+### Slide 11 – Kiểm thử tự động (32/32 PASS)
+- **Bộ test end-to-end 1 lệnh**: `python simulator/test_suite.py` → `KET QUA: 32/32 PASS`.
+- Tự bật/tắt simulator `quiet`, tự sinh tài khoản thử nghiệm không trùng lặp.
+| Nhóm | Checkpoint | KQ |
 |---|---|---|
-| 1–3 | Broker Up · Simulator nối · Backend REST | ✅ |
-| 4–5 | Đặt chỗ thành công · **Chống trùng SV02 bị từ chối** | ✅ |
-| 6–7 | Xe vào/ra · **Tính phí 95p → 6000đ** | ✅ |
-| 8–11 | Thống kê · Đăng ký/đăng nhập · **Sai mật khẩu → 401** · Nạp tiền | ✅ |
-| 12–14 | Lịch sử 3 bảng · Biểu đồ Chart.js · **Firmware V2 build trên Wokwi** | ✅ |
-| 15–16 | **Đọc pixel canvas xác nhận OLED hiển thị** · Nút bấm đổi trạng thái | ✅ |
+| Hạ tầng | Broker + Backend + MQTT online, đủ 6 ô | ✅ |
+| Đặt chỗ | `POST /api/booking` + **chống trùng SV02 bị từ chối** | ✅ |
+| Vòng đời xe | Xe vào/ra + **tính phí 95p → 6000đ, ≤30p → 0đ** | ✅ |
+| Barrier | `POST /api/gate OPEN` → `gate=OPEN` | ✅ |
+| Thống kê | Doanh thu 7 ngày · 24 mốc giờ · top user | ✅ |
+| Xác thực | Đăng ký/đăng nhập · nạp tiền · **sai mật khẩu → 401** | ✅ |
+| Dashboard | HTML · 5 tab · Chart.js · **SSE realtime** | ✅ |
 
+- **6 bug đã tìm & sửa**: OLED trắng xanh · lệnh ENTER bị IR ghi đè · nhiễu bounce nút bấm · token JWT sai · barrier không lưu `db.gate` · test SSE đọc theo byte bị treo.
 - *Gợi ý hình: bảng kết quả test + ảnh OLED đang hiển thị.*
 
 ### Slide 12 – Kết luận & hướng phát triển
