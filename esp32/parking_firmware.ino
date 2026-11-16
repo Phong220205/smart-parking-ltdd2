@@ -1,32 +1,29 @@
-// LAB1 - Smart Parking firmware ESP32 (ban Wokwi LCD song song + that I2C)
-// Wokwi Library Manager: PubSubClient, ArduinoJson, ESP32Servo, MFRC522
-// (Wokwi da co san LiquidCrystal song song, khong can cai them)
+// LAB1 - Smart Parking firmware ESP32 (ban chot Wokwi LCD song song)
+// Thu vien Wokwi: PubSubClient, ArduinoJson, ESP32Servo, MFRC522
+// LiquidCrystal la thu vien mac dinh, khong can cai
 
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <ESP32Servo.h>
-#include <LiquidCrystal.h>   // Wokwi LCD song song cho chac an
+#include <LiquidCrystal.h>
 #include <SPI.h>
 #include <MFRC522.h>
 
-// ---------- WiFi / Broker ----------
 const char* WIFI_SSID = "Wokwi-GUEST";
 const char* WIFI_PASS = "";
-const char* MQTT_HOST = "test.mosquitto.org"; // broker public, khong auth
+const char* MQTT_HOST = "test.mosquitto.org";
 const int   MQTT_PORT = 1883;
 const char* MQTT_USER = "";
 const char* MQTT_PASS = "";
 
 #define NUM_SLOTS 6
 const char* SLOT_ID[NUM_SLOTS] = {"P1","P2","P3","P4","P5","P6"};
-const int IR_PIN[NUM_SLOTS] = {13, 12, 14, 27, 26, 25}; // 6 nut nhan
-const int SERVO_PIN = 15;   // doi tu 18 -> 15 de tranh SPI SCK
-const int BUZZER_PIN = 2;   // doi tu 23 -> 2 de tranh SPI MOSI
+const int IR_PIN[NUM_SLOTS] = {13, 12, 14, 27, 26, 25};
+const int SERVO_PIN = 15;
+const int BUZZER_PIN = 2;
 #define RFID_SS 5
-#define RFID_RST 4          // doi tu 22 -> 4 de tranh LCD
-
-// LCD song song (khop diagram.json moi)
+#define RFID_RST 4
 #define LCD_RS 16
 #define LCD_E  17
 #define LCD_D4 21
@@ -145,7 +142,7 @@ void setup(){
   lcd.begin(16,2);
   lcd.clear(); lcd.setCursor(0,0); lcd.print("Smart Parking");
   lcd.setCursor(0,1); lcd.print("WiFi...");
-  SPI.begin(18,19,23,5); // SCK,MISO,MOSI,SS co dinh
+  SPI.begin(18,19,23,5);
   rfid.PCD_Init();
   WiFi.begin(WIFI_SSID,WIFI_PASS);
   Serial.print("WiFi..."); int t=0; while(WiFi.status()!=WL_CONNECTED && t<50){ delay(400); Serial.print("."); t++; }
