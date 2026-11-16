@@ -248,6 +248,12 @@ File `.github/workflows/ci.yml`:
 
 Chạy tự động mỗi lần push lên `master` → badge CI trong README là bằng chứng code chất lượng.
 
+**Kết quả CI trên GitHub Actions (16/11/2026):**
+```
+✅ Kiem thu end-to-end (36 checkpoint)  ->  KET QUA: 36/36 PASS
+✅ Bundle React Native (Android)        ->  3/3 file syntax OK
+```
+
 ## 14. Tình trạng cuối cùng
 
 | Hạng mục | Trạng thái |

@@ -111,6 +111,7 @@ ESP32 (thật/Wokwi)  ──MQTT 1883──▶  Mosquitto Broker  ──WS 9001�
 | Dashboard | HTML · 5 tab · Chart.js · **SSE realtime** | ✅ |
 
 - **CI GitHub Actions**: mỗi lần push tự chạy lại 36 checkpoint + kiểm tra syntax firmware/backend/app.
+  *Kết quả thực tế trên GitHub: `KET QUA: 36/36 PASS` + `3/3 file syntax OK`.*
 - **6 bug đã tìm & sửa**: OLED trắng xanh · lệnh ENTER bị IR ghi đè · nhiễu bounce nút bấm · token JWT sai · barrier không lưu `db.gate` · test SSE đọc theo byte bị treo.
 - *Gợi ý hình: bảng kết quả test + ảnh OLED đang hiển thị.*
 

@@ -1,6 +1,10 @@
 # ĐỒ ÁN LTDD2 – BÃI ĐỖ XE THÔNG MINH (SMART PARKING)
 Mô phỏng 100% – không cần phần cứng thật.
 
+[![CI - Smart Parking](https://github.com/Phong220205/smart-parking-ltdd2/actions/workflows/ci.yml/badge.svg)](https://github.com/Phong220205/smart-parking-ltdd2/actions/workflows/ci.yml)
+![Tests](https://img.shields.io/badge/tests-36%2F36%20PASS-brightgreen)
+![License](https://img.shields.io/badge/LTDD2-Tr%C4%B0%E1%BB%9D%20H%E1%BB%8C%20%C4%90%E1%BA%A4NG%20%C3%81-blue)
+
 ## 1. Kiến trúc
 
 ```
