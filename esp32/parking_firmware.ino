@@ -1,5 +1,5 @@
 // LAB1 - Smart Parking firmware ESP32 (chay that + Wokwi)
-// Thu vien: PubSubClient, ArduinoJson, LiquidCrystal_I2C, MFRC522, ESP32Servo
+// Thu vien Wokwi Library Manager: PubSubClient, ArduinoJson, ESP32Servo, MFRC522, LiquidCrystal I2C
 // Wokwi: nut nhan = cam bien IR tung o (LOW = co xe), RFID mo phong bang Serial: "RFID:A1B2C3"
 
 #include <WiFi.h>
@@ -10,13 +10,15 @@
 #include <SPI.h>
 #include <MFRC522.h>
 
-// ---------- Cau hinh WiFi / Broker (doi theo may) ----------
+// ---------- Cau hinh WiFi / Broker ----------
 const char* WIFI_SSID = "Wokwi-GUEST";
 const char* WIFI_PASS = "";
-const char* MQTT_HOST = "test.mosquitto.org"; // demo; khi co broker docker thi doi IP
+// Wokwi demo dung broker public KHONG can user/pass.
+// Khi chay broker docker local thi doi HOST thanh IP may tinh + dien user/pass.
+const char* MQTT_HOST = "test.mosquitto.org";
 const int   MQTT_PORT = 1883;
-const char* MQTT_USER = "esp32";
-const char* MQTT_PASS = "esp32123";
+const char* MQTT_USER = "";       // de trong = khong dung auth (cho test.mosquitto.org)
+const char* MQTT_PASS = "";
 
 #define NUM_SLOTS 6
 const char* SLOT_ID[NUM_SLOTS] = {"P1","P2","P3","P4","P5","P6"};
@@ -45,20 +47,34 @@ struct Slot {
 };
 Slot slots[NUM_SLOTS];
 String gateState = "CLOSED";
-unsigned long lastSnapshot = 0, lastBeat = 0, lastLcd = 0;
+unsigned long lastSnapshot = 0, lastBeat = 0, lastLcd = 0, lastMqttTry = 0;
+bool mqttOK = false;
 
 int slotIndex(String id){ for(int i=0;i<NUM_SLOTS;i++) if(id==SLOT_ID[i]) return i; return -1; }
 void beep(int n=2){ for(int i=0;i<n;i++){ digitalWrite(BUZZER_PIN,HIGH); delay(120); digitalWrite(BUZZER_PIN,LOW); delay(120);} }
 
+void drawLCD(String line2extra = "") {
+  int freeN = 0; for(int i=0;i<NUM_SLOTS;i++) if(!slots[i].occupied) freeN++;
+  lcd.clear(); lcd.setCursor(0,0);
+  String l1 = "Trong:" + String(freeN) + "/" + String(NUM_SLOTS) + " " + gateState;
+  lcd.print(l1.substring(0,16));
+  lcd.setCursor(0,1);
+  String s=""; for(int i=0;i<NUM_SLOTS;i++) s += slots[i].occupied?"X":(slots[i].reservedBy!=""?"R":"_");
+  if(line2extra != "") s = line2extra.substring(0,16);
+  lcd.print(s);
+}
+
 void pubSlot(int i){
+  if(!mqtt.connected()) return;
   StaticJsonDocument<256> d;
   d["id"]=SLOT_ID[i]; d["occupied"]=slots[i].occupied;
   d["reservedBy"]=slots[i].reservedBy; d["updatedAt"]=millis();
   char t[64]; snprintf(t,sizeof(t),"parking/slot/%s/status",SLOT_ID[i]);
   char buf[256]; serializeJson(d,buf);
-  mqtt.publish(t,buf,true); // retain: client moi vao thay ngay
+  mqtt.publish(t,buf,true);
 }
 void pubSnapshot(){
+  if(!mqtt.connected()) return;
   StaticJsonDocument<1024> d; JsonArray a=d.createNestedArray("slots");
   for(int i=0;i<NUM_SLOTS;i++){ JsonObject o=a.createNestedObject();
     o["id"]=SLOT_ID[i]; o["occupied"]=slots[i].occupied; o["reservedBy"]=slots[i].reservedBy; }
@@ -67,14 +83,19 @@ void pubSnapshot(){
   mqtt.publish("parking/slots/snapshot",buf,true);
 }
 void pubBookingState(String slot, String state, String user, String reqId, bool ok, String msg){
+  if(!mqtt.connected()) return;
   StaticJsonDocument<384> d;
   d["slot"]=slot; d["state"]=state; d["user"]=user; d["requestId"]=reqId; d["ok"]=ok; d["msg"]=msg;
   char t[64]; snprintf(t,sizeof(t),"parking/booking/%s/state",slot.c_str());
   char buf[384]; serializeJson(d,buf); mqtt.publish(t,buf,true);
 }
-void pubGate(){ StaticJsonDocument<256> d; d["gate"]=gateState; d["ts"]=millis();
-  char buf[256]; serializeJson(d,buf); mqtt.publish("parking/gate/barrier/state",buf,true); }
+void pubGate(){
+  if(!mqtt.connected()) return;
+  StaticJsonDocument<256> d; d["gate"]=gateState; d["ts"]=millis();
+  char buf[256]; serializeJson(d,buf); mqtt.publish("parking/gate/barrier/state",buf,true);
+}
 void pubReceipt(int i, String user){
+  if(!mqtt.connected()) return;
   unsigned long mins = (millis()-slots[i].enterAt)/60000; if(mins<1) mins=1;
   long fee = 0;
   if(!(FEE_FIRST_30MIN_FREE && mins<=30)) fee = ((mins+59)/60)*FEE_PER_HOUR;
@@ -82,7 +103,7 @@ void pubReceipt(int i, String user){
   d["minutes"]=(int)mins; d["fee"]=fee;
   char buf[256]; serializeJson(d,buf); mqtt.publish("parking/billing/receipt",buf,false);
 }
-void setGate(String g){ gateState=g; barrier.write(g=="OPEN"?90:0); pubGate(); }
+void setGate(String g){ gateState=g; barrier.write(g=="OPEN"?90:0); pubGate(); drawLCD(); }
 
 void onMsg(char* topic, byte* p, unsigned int len){
   String s; for(unsigned i=0;i<len;i++) s+=(char)p[i];
@@ -101,9 +122,9 @@ void onMsg(char* topic, byte* p, unsigned int len){
       if(slots[i].reservedBy!="" && slots[i].reservedBy!=user){ pubBookingState(slot,"RESERVED",user,req,false,"O da duoc dat boi "+slots[i].reservedBy); beep(3); return; }
       slots[i].reservedBy=user; slots[i].reserveAt=millis();
       pubBookingState(slot,"RESERVED",user,req,true,"Dat o thanh cong, giu cho 5 phut");
-      pubSlot(i); pubSnapshot(); beep(1);
+      pubSlot(i); pubSnapshot(); beep(1); drawLCD();
     } else if(act=="cancel"){
-      if(slots[i].reservedBy==user){ slots[i].reservedBy=""; pubBookingState(slot,"FREE",user,req,true,"Da huy dat"); pubSlot(i); pubSnapshot(); }
+      if(slots[i].reservedBy==user){ slots[i].reservedBy=""; pubBookingState(slot,"FREE",user,req,true,"Da huy dat"); pubSlot(i); pubSnapshot(); drawLCD(); }
       else pubBookingState(slot,"ERROR",user,req,false,"Ban khong phai nguoi dat");
     }
   }
@@ -115,42 +136,67 @@ void setup(){
   pinMode(BUZZER_PIN,OUTPUT);
   barrier.attach(SERVO_PIN); barrier.write(0);
   lcd.init(); lcd.backlight();
+  lcd.clear(); lcd.setCursor(0,0); lcd.print("Smart Parking");
+  lcd.setCursor(0,1); lcd.print("WiFi...");
   SPI.begin(); rfid.PCD_Init();
   WiFi.begin(WIFI_SSID,WIFI_PASS);
-  Serial.print("WiFi..."); while(WiFi.status()!=WL_CONNECTED){ delay(400); Serial.print("."); }
+  Serial.print("WiFi..."); int t=0; while(WiFi.status()!=WL_CONNECTED && t<50){ delay(400); Serial.print("."); t++; }
   Serial.println(WiFi.localIP());
+  lcd.clear(); lcd.setCursor(0,0); lcd.print(WiFi.localIP().toString());
+  lcd.setCursor(0,1); lcd.print("MQTT...");
+  delay(800);
   mqtt.setServer(MQTT_HOST,MQTT_PORT); mqtt.setCallback(onMsg); mqtt.setBufferSize(2048);
+  drawLCD();
 }
 
-void reconnect(){
-  while(!mqtt.connected()){
-    String id="esp32-parking-"+String(random(0xffff),HEX);
-    // LWT: neu ESP32 rot mang, App thay offline ngay
-    if(mqtt.connect(id.c_str(),MQTT_USER,MQTT_PASS,"parking/system/status",1,true,"{\"online\":false}")){
-      mqtt.publish("parking/system/status","{\"online\":true}",true);
-      mqtt.subscribe("parking/booking/+/set",1);
-      mqtt.subscribe("parking/gate/barrier/cmd",1);
-      pubSnapshot(); for(int i=0;i<NUM_SLOTS;i++) pubSlot(i); pubGate();
-    } else delay(2000);
+bool mqttTryConnect(){
+  String id="esp32-parking-"+String(random(0xffff),HEX);
+  bool ok=false;
+  if(strlen(MQTT_USER)>0){
+    ok = mqtt.connect(id.c_str(),MQTT_USER,MQTT_PASS,"parking/system/status",1,true,"{\"online\":false}");
+  } else {
+    ok = mqtt.connect(id.c_str(),"parking/system/status",1,true,"{\"online\":false}");
   }
+  if(ok){
+    Serial.println("MQTT OK");
+    mqtt.publish("parking/system/status","{\"online\":true}",true);
+    mqtt.subscribe("parking/booking/+/set",1);
+    mqtt.subscribe("parking/gate/barrier/cmd",1);
+    pubSnapshot(); for(int i=0;i<NUM_SLOTS;i++) pubSlot(i); pubGate();
+  } else {
+    Serial.print("MQTT fail rc="); Serial.println(mqtt.state());
+  }
+  return ok;
 }
 
 void loop(){
-  if(!mqtt.connected()) reconnect();
-  mqtt.loop();
-  // 1) Doc IR (Wokwi: nhan nut = co xe). Chong doi: on dinh 200ms
-  static unsigned long lastRead=0; 
+  // MQTT khong chan: 3s thu 1 lan, LCD + nut van chay
+  if(!mqtt.connected()){
+    mqttOK = false;
+    if(millis()-lastMqttTry > 3000){
+      lastMqttTry = millis();
+      Serial.println("Thu ket noi MQTT...");
+      mqttTryConnect();
+    }
+  } else {
+    mqttOK = true;
+    mqtt.loop();
+  }
+  // 1) Doc IR (Wokwi: nhan nut = co xe). Chong doi 200ms
+  static unsigned long lastRead=0;
   if(millis()-lastRead>200){
     lastRead=millis();
+    bool changed=false;
     for(int i=0;i<NUM_SLOTS;i++){
       bool occ = (digitalRead(IR_PIN[i])==LOW);
       if(occ!=slots[i].occupied){
-        slots[i].occupied=occ;
+        slots[i].occupied=occ; changed=true;
         if(occ){ slots[i].enterAt=millis();
-          StaticJsonDocument<192> e; e["card"]=slots[i].parkedCard; e["slot"]=SLOT_ID[i]; e["event"]="ENTER";
-          char b[192]; serializeJson(e,b); mqtt.publish("parking/gate/rfid",b,false);
-          if(slots[i].reservedBy!="") { /* xe cua nguoi dat da vao -> khoa dat */ }
-        } else { // xe ra -> tinh tien, xoa dat
+          if(mqtt.connected()){
+            StaticJsonDocument<192> e; e["card"]=slots[i].parkedCard; e["slot"]=SLOT_ID[i]; e["event"]="ENTER";
+            char b[192]; serializeJson(e,b); mqtt.publish("parking/gate/rfid",b,false);
+          }
+        } else {
           if(slots[i].enterAt>0) pubReceipt(i, slots[i].reservedBy!=""?slots[i].reservedBy:"guest");
           slots[i].reservedBy=""; slots[i].enterAt=0; slots[i].parkedCard="";
           pubBookingState(SLOT_ID[i],"FREE","", "",true,"O trong");
@@ -158,29 +204,52 @@ void loop(){
         pubSlot(i); pubSnapshot();
       }
     }
-    // het han giu cho 5 phut
+    if(slots[0].reservedBy!="" || changed) { /* giu dat */ }
     for(int i=0;i<NUM_SLOTS;i++)
       if(slots[i].reservedBy!="" && !slots[i].occupied && millis()-slots[i].reserveAt>BOOKING_TIMEOUT_MS){
         slots[i].reservedBy=""; pubBookingState(SLOT_ID[i],"FREE","", "",true,"Het han giu cho");
-        pubSlot(i); pubSnapshot(); beep(2);
+        pubSlot(i); pubSnapshot(); beep(2); changed=true;
       }
+    if(changed) drawLCD();
   }
-  // 2) RFID that (Wokwi go Serial "RFID:A1B2C3")
+  // 2) RFID
   if(rfid.PICC_IsNewCardPresent() && rfid.PICC_ReadCardSerial()){
     String c=""; for(byte i=0;i<rfid.uid.size;i++){ char h[4]; sprintf(h,"%02X",rfid.uid.uidByte[i]); c+=h; }
-    StaticJsonDocument<192> e; e["card"]=c; e["event"]="SCAN"; char b[192]; serializeJson(e,b);
-    mqtt.publish("parking/gate/rfid",b,false); beep(1); rfid.PICC_HaltA();
+    if(mqtt.connected()){
+      StaticJsonDocument<192> e; e["card"]=c; e["event"]="SCAN"; char b[192]; serializeJson(e,b);
+      mqtt.publish("parking/gate/rfid",b,false);
+    }
+    Serial.print("RFID: "); Serial.println(c);
+    beep(1); rfid.PICC_HaltA(); drawLCD(c);
   }
   if(Serial.available()){ String l=Serial.readStringUntil('\n'); l.trim();
     if(l.startsWith("RFID:")){ String c=l.substring(5);
-      StaticJsonDocument<192> e; e["card"]=c; e["event"]="SCAN"; char b[192]; serializeJson(e,b);
-      mqtt.publish("parking/gate/rfid",b,false); } }
-  // 3) LCD + heartbeat
-  if(millis()-lastLcd>1000){ lastLcd=millis(); int free=0; for(int i=0;i<NUM_SLOTS;i++) if(!slots[i].occupied) free++;
-    lcd.clear(); lcd.setCursor(0,0); lcd.print("Trong:"+String(free)+"/"+String(NUM_SLOTS)+" Gate:"+gateState); lcd.setCursor(0,1);
-    String s=""; for(int i=0;i<NUM_SLOTS;i++) s+= slots[i].occupied?"X":(slots[i].reservedBy!=""?"R":"_"); lcd.print(s); }
-  if(millis()-lastBeat>15000){ lastBeat=millis();
+      Serial.print("RFID manual: "); Serial.println(c);
+      if(mqtt.connected()){
+        StaticJsonDocument<192> e; e["card"]=c; e["event"]="SCAN"; char b[192]; serializeJson(e,b);
+        mqtt.publish("parking/gate/rfid",b,false);
+      }
+      drawLCD(c); } }
+  // 3) LCD + heartbeat (luon chay ke ca mat MQTT)
+  if(millis()-lastLcd>1000){
+    lastLcd=millis();
+    if(!mqttOK) {
+      int freeN=0; for(int i=0;i<NUM_SLOTS;i++) if(!slots[i].occupied) freeN++;
+      lcd.clear(); lcd.setCursor(0,0);
+      lcd.print(("Trong:"+String(freeN)+"/6 "+gateState).substring(0,16));
+      lcd.setCursor(0,1);
+      String s=""; for(int i=0;i<NUM_SLOTS;i++) s+= slots[i].occupied?"X":"_";
+      s += " MQTT..";
+      lcd.print(s.substring(0,16));
+    } else {
+      drawLCD();
+    }
+    Serial.print("Slots: ");
+    for(int i=0;i<NUM_SLOTS;i++) Serial.print(slots[i].occupied?"X":"_");
+    Serial.print(" MQTT:"); Serial.println(mqttOK?"OK":"WAIT");
+  }
+  if(mqtt.connected() && millis()-lastBeat>15000){ lastBeat=millis();
     StaticJsonDocument<192> h; h["uptime"]=millis()/1000; h["wifi"]=WiFi.RSSI(); h["freeHeap"]=ESP.getFreeHeap();
     char b[192]; serializeJson(h,b); mqtt.publish("parking/system/heartbeat",b,false); }
-  if(millis()-lastSnapshot>30000){ lastSnapshot=millis(); pubSnapshot(); }
+  if(mqtt.connected() && millis()-lastSnapshot>30000){ lastSnapshot=millis(); pubSnapshot(); }
 }
