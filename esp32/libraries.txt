@@ -3,4 +3,4 @@ PubSubClient
 ArduinoJson
 ESP32Servo
 MFRC522
-LiquidCrystal
+LiquidCrystal I2C
