@@ -65,9 +65,15 @@ export function connectParking(cfg, onEvent) {
     clientId: 'app-' + cfg.myId + '-' + Math.random().toString(16).slice(2, 6),
     protocolVersion: 4,
   };
-  if (direct) {
+  // [LAB2 - Bảo mật & phân quyền]
+  // Backend của đồ án đã nhúng broker MQTT CÓ xác thực user/password.
+  // Vì vậy, kể cả khi App nối qua đường dẫn /mqtt của backend, App cũng
+  // phải gửi kèm tài khoản "app" (quyền CHỈ ĐỌC + gửi lệnh điều khiển).
+  if (direct || cfg.brokerUser) {
     opts.username = cfg.brokerUser || undefined;
     opts.password = cfg.brokerPass || undefined;
+  }
+  if (direct) {
     if (cfg.brokerTls) {
       opts.rejectUnauthorized = cfg.rejectUnauthorized !== false;
     }

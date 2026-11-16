@@ -57,14 +57,228 @@
 #include <MFRC522.h>
 #include <time.h>          // [N3] dùng cho đồng hồ thực tế (NTP)
 
-// --- [N1] MQTT qua WebSocket (wss://) ---
-// PubSubClient nói chuyện TCP thuần. Để nối tới broker cloud (Render chỉ mở
-// cổng HTTPS), ta bọc một lớp WebSocketClient -> WebSocketStreamClient
-// (lớp này implements Client.h mà PubSubClient yêu cầu) -> nhờ vậy PubSubClient
-// vẫn dùng API quen thuộc mà đường truyền là wss:// (đã MÃ HOÁ).
-#include <ArduinoHttpClient.h>
-#include <WebSocketClient250.h>
-#include <WebSocketStreamClient.h>
+// ---------------------------------------------------------------------------
+//  [N1] LỚP CLIENT TỰ VIẾT: MQTT-over-WebSocket (wss://)
+// ---------------------------------------------------------------------------
+//  VÌ SAO KHÔNG DÙNG THƯ VIỆN "WebSocketStreamClient" CỦA WOKWI?
+//    Bản thư viện đó (areve/WebSocketStreamClient) viết cho Arduino core 2.x.
+//    Trên core 3.x, interface "Client" đã đổi (thêm/bổ sung hàm thuần ảo) nên
+//    thư viện không còn biên dịch được (lỗi: "cannot declare variable ... to be
+//    of abstract type"). Vì vậy ta TỰ VIẾT lớp bọc WebSocket tối giản theo
+//    đúng chuẩn RFC 6455:
+//      - Bắt tay WebSocket (HTTP Upgrade) qua kênh TLS  -> wss:// (đã mã hoá)
+//      - Gói mỗi gói MQTT thành 1 WebSocket "binary frame" có mask
+//      - Giải mã frame nhận về rồi giao cho PubSubClient như đọc TCP thường
+//    => PubSubClient vẫn dùng đúng API quen thuộc, nhưng đường truyền là
+//       HTTPS có mã hoá + có xác thực user/password (đúng tiêu chí Lab 2).
+// ---------------------------------------------------------------------------
+#include <esp_system.h>   // esp_random() - sinh khóa bắt tay & mặt nạ ngẫu nhiên
+
+class MqttWsClient : public Client {
+public:
+  MqttWsClient(WiFiClientSecure &tls, const char *host, uint16_t port, const char *path)
+    : _tls(tls), _host(host), _port(port), _path(path) {
+    _wsReady = false; _rxLen = 0; _rxPos = 0; _rawLen = 0;
+  }
+
+  // ---- Interface Client mà PubSubClient yêu cầu ----
+  int connect(IPAddress ip, uint16_t port) override { (void)ip; (void)port; return handshake(); }
+  int connect(const char *host, uint16_t port) override { (void)host; (void)port; return handshake(); }
+  size_t write(uint8_t b) override { return write(&b, 1); }
+  size_t write(const uint8_t *buf, size_t size) override {
+    if (!_wsReady) return 0;
+    if (!sendFrame(0x2, buf, size)) return 0;   // 0x2 = binary frame
+    return size;
+  }
+  int available() override { pump(); return _rxLen - _rxPos; }
+  int read() override {
+    if (available() <= 0) return -1;
+    return _rx[_rxPos++];
+  }
+  int read(uint8_t *buf, size_t size) override {
+    int n = available();
+    if (n <= 0) return -1;
+    if ((size_t)n > size) n = (int)size;
+    memcpy(buf, _rx + _rxPos, n);
+    _rxPos += n;
+    return n;
+  }
+  int peek() override { if (available() <= 0) return -1; return _rx[_rxPos]; }
+  void flush() override { if (_tls.connected()) _tls.flush(); }
+  void stop() override { _wsReady = false; _tls.stop(); }
+  uint8_t connected() override { return (_wsReady && _tls.connected()) ? 1 : 0; }
+  operator bool() override { return connected() != 0; }
+
+private:
+  WiFiClientSecure &_tls;
+  const char *_host; uint16_t _port; const char *_path;
+  bool _wsReady;
+  uint8_t _rx[4096]; int _rxLen; int _rxPos;   // dữ liệu MQTT đã giải mã
+  uint8_t _raw[8192]; int _rawLen;              // dữ liệu thô (frame WebSocket)
+
+  // Sinh "Sec-WebSocket-Key" (16 byte ngẫu nhiên -> Base64)
+  String makeKey() {
+    uint8_t k[16];
+    for (int i = 0; i < 16; i++) k[i] = (uint8_t)esp_random();
+    const char *T = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    char out[25]; int o = 0;
+    for (int i = 0; i < 16; i += 3) {
+      uint32_t v = ((uint32_t)k[i] << 16) |
+                   ((i + 1 < 16 ? (uint32_t)k[i + 1] : 0) << 8) |
+                    (i + 2 < 16 ? (uint32_t)k[i + 2] : 0);
+      out[o++] = T[(v >> 18) & 63];
+      out[o++] = T[(v >> 12) & 63];
+      out[o++] = (i + 1 < 16) ? T[(v >> 6) & 63] : '=';
+      out[o++] = (i + 2 < 16) ? T[v & 63] : '=';
+    }
+    out[o] = 0;
+    return String(out);
+  }
+
+  // Bắt tay WebSocket qua TLS (HTTP/1.1 Upgrade)
+  int handshake() {
+    _wsReady = false; _rxLen = _rxPos = _rawLen = 0;
+    Serial.printf("[WS] Bat tay wss://%s%s ...\n", _host, _path);
+    if (!_tls.connect(_host, _port)) { Serial.println("[WS] TLS connect that bai"); return 0; }
+    _tls.setTimeout(10000);
+
+    String req;
+    req.reserve(320);
+    req += "GET "; req += _path; req += " HTTP/1.1\r\n";
+    req += "Host: "; req += _host; req += "\r\n";
+    req += "Upgrade: websocket\r\n";
+    req += "Connection: Upgrade\r\n";
+    req += "Sec-WebSocket-Key: "; req += makeKey(); req += "\r\n";
+    req += "Sec-WebSocket-Version: 13\r\n";
+    req += "\r\n";
+    if (_tls.write((const uint8_t *)req.c_str(), req.length()) == 0) {
+      Serial.println("[WS] Ghi HTTP request that bai");
+      _tls.stop(); return 0;
+    }
+
+    // Đọc header phản hồi tới khi thấy dòng trống kết thúc
+    unsigned long t0 = millis();
+    int end = -1;
+    while (millis() - t0 < 10000) {
+      end = findHeaderEnd();
+      if (end > 0) break;
+      if (_tls.available()) {
+        int c = _tls.read();
+        if (c < 0) break;
+        if (_rawLen < (int)sizeof(_raw)) _raw[_rawLen++] = (uint8_t)c;
+      } else {
+        delay(2);
+      }
+    }
+    if (end <= 0) { Serial.println("[WS] Khong nhan duoc header phan hoi"); _tls.stop(); return 0; }
+
+    // Kiểm tra mã trạng thái (101 = Switching Protocols)
+    String head((const char *)_raw, (unsigned int)end);
+    int lineEnd = head.indexOf("\r\n");
+    if (!head.startsWith("HTTP/1.1 101") && !head.startsWith("HTTP/1.0 101")) {
+      Serial.print("[WS] Server tu choi: ");
+      Serial.println(lineEnd > 0 ? head.substring(0, lineEnd) : head.substring(0, 40));
+      _tls.stop(); return 0;
+    }
+
+    // Phần dữ liệu còn lại (nếu có) chính là frame WebSocket đầu tiên
+    int remain = _rawLen - end;
+    if (remain > 0) memmove(_raw, _raw + end, remain);
+    _rawLen = remain;
+
+    _wsReady = true;
+    Serial.println("[WS] Bat tay OK - da nang keo WebSocket len broker");
+    return 1;
+  }
+
+  int findHeaderEnd() {
+    for (int i = 0; i + 3 < _rawLen; i++) {
+      if (_raw[i] == '\r' && _raw[i + 1] == '\n' && _raw[i + 2] == '\r' && _raw[i + 3] == '\n') return i + 4;
+    }
+    return -1;
+  }
+
+  // Gửi 1 WebSocket frame (luôn có mask vì client -> server phải mask)
+  bool sendFrame(uint8_t opcode, const uint8_t *data, size_t len) {
+    uint8_t hdr[14]; size_t h = 0;
+    hdr[h++] = 0x80 | opcode;                       // FIN + opcode
+    uint8_t mask[4];
+    for (int i = 0; i < 4; i++) mask[i] = (uint8_t)esp_random();
+    if (len < 126) {
+      hdr[h++] = 0x80 | (uint8_t)len;
+    } else if (len < 65536) {
+      hdr[h++] = 0x80 | 126;
+      hdr[h++] = (len >> 8) & 0xff;
+      hdr[h++] = len & 0xff;
+    } else {
+      hdr[h++] = 0x80 | 127;
+      for (int i = 7; i >= 0; i--) hdr[h++] = (len >> (8 * i)) & 0xff;
+    }
+    memcpy(hdr + h, mask, 4); h += 4;
+    if (_tls.write(hdr, h) == 0) return false;
+
+    uint8_t chunk[256]; size_t off = 0;
+    while (off < len) {
+      size_t n = len - off; if (n > sizeof(chunk)) n = sizeof(chunk);
+      for (size_t i = 0; i < n; i++) chunk[i] = data[off + i] ^ mask[(off + i) % 4];
+      if (_tls.write(chunk, n) == 0) return false;
+      off += n;
+    }
+    return true;
+  }
+
+  // Đọc byte thô từ TLS vào bộ đệm _raw
+  void pump() {
+    while (_tls.available() && _rawLen < (int)sizeof(_raw)) {
+      int c = _tls.read();
+      if (c < 0) break;
+      _raw[_rawLen++] = (uint8_t)c;
+    }
+    parseFrames();
+  }
+
+  // Giải mã các frame WebSocket nhận được -> đưa payload vào bộ đệm _rx
+  void parseFrames() {
+    while (true) {
+      if (_rawLen < 2) return;
+      uint8_t op = _raw[0] & 0x0f;
+      bool masked = (_raw[1] & 0x80) != 0;
+      uint8_t l7 = _raw[1] & 0x7f;
+      size_t hdrLen = 2, plen = l7;
+      if (l7 == 126) {
+        hdrLen = 4;
+        if (_rawLen < 4) return;
+        plen = ((size_t)_raw[2] << 8) | _raw[3];
+      } else if (l7 == 127) {
+        hdrLen = 10;
+        if (_rawLen < 10) return;
+        plen = 0;
+        for (int i = 0; i < 8; i++) plen = (plen << 8) | _raw[2 + i];
+      }
+      size_t maskLen = masked ? 4 : 0;
+      if ((size_t)_rawLen < hdrLen + maskLen + plen) return;   // frame chưa đủ -> chờ thêm
+
+      const uint8_t *mask = masked ? (_raw + hdrLen) : nullptr;
+      const uint8_t *pay  = _raw + hdrLen + maskLen;
+
+      if (op == 0x8) {                 // Close
+        _wsReady = false;
+      } else if (op == 0x9) {          // Ping -> trả lời Pong
+        sendFrame(0xA, pay, plen);
+      } else if (op == 0x2 || op == 0x1 || op == 0x0) {  // Binary / Text / Continuation
+        if (_rxPos >= _rxLen) { _rxPos = 0; _rxLen = 0; }
+        for (size_t i = 0; i < plen; i++) {
+          uint8_t b = pay[i];
+          if (masked) b ^= mask[i % 4];
+          if (_rxLen < (int)sizeof(_rx)) _rx[_rxLen++] = b;
+        }
+      }
+      size_t used = hdrLen + maskLen + plen;
+      memmove(_raw, _raw + used, _rawLen - used);
+      _rawLen -= (int)used;
+    }
+  }
+};
 
 // --- [N4] Watchdog Timer chuẩn của ESP32 (task WDT của ESP-IDF) ---
 // Dùng header có sẵn trong Arduino ESP32 core. Guard bằng __has_include để
@@ -150,12 +364,10 @@ WiFiClientSecure espSecureClient;  // kết nối TLS cho MQTT (chế độ loca
 // WebSocketStreamClient : biến WebSocket thành "Client" cho PubSubClient
 // PubSubClient          : vẫn dùng API connect/subscribe/publish như bình thường
 #if MQTT_USE_WS
-  // WebSocketClient250 : lớp WebSocket của thư viện WebSocketStreamClient
-  //                      (hỗ trợ cả ws:// và wss:// trên ESP32)
-  // WebSocketStreamClient: biến WebSocket thành "Client" mà PubSubClient dùng được
-  WebSocketClient250 wsClient(espSecureClient, MQTT_HOST, 443);
-  WebSocketStreamClient wsStreamClient(wsClient, MQTT_PATH);
-  PubSubClient mqtt(wsStreamClient);
+  // MqttWsClient : lớp Client tự viết, bọc WebSocket (RFC 6455) qua kênh TLS
+  //                -> đường truyền wss:// đã MÃ HOÁ, có xác thực user/pass
+  MqttWsClient wsClient(espSecureClient, MQTT_HOST, 443, MQTT_PATH);
+  PubSubClient mqtt(wsClient);
 #else
   PubSubClient mqtt(espClient);
 #endif
@@ -796,14 +1008,10 @@ void setup() {
 
   // --- Cấu hình client MQTT ---
 #if MQTT_USE_WS
-  // Chế độ WebSocket: địa chỉ broker đã nằm trong WebSocketClient250,
+  // Chế độ WebSocket: địa chỉ broker đã nằm trong MqttWsClient,
   // nên không cần (và không được) gọi mqtt.setServer() cho chế độ này.
-  // Thay vào đó ta MỞ kết nối WebSocket tới đường dẫn /mqtt.
-  wsClient.begin(MQTT_PATH);
-  Serial.print("[MQTT] Ket noi WebSocket ");
-  Serial.print(MQTT_HOST);
-  Serial.print(MQTT_PATH);
-  Serial.println(" ...");
+  Serial.print("[MQTT] Chu bi "); Serial.print(MQTT_HOST); Serial.print(MQTT_PATH);
+  Serial.println(" (wss://)");
 #else
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
 #endif
