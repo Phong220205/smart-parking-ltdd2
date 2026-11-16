@@ -2,23 +2,57 @@ import 'react-native-url-polyfill/auto';
 import mqtt from 'mqtt';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const DEFAULT_CFG = { host: 'ws://192.168.1.10:9001', user: 'app', pass: 'app123', myId: 'SV01' };
+// ============================================================================
+//  CẤU HÌNH KẾT NỐI
+//  ---------------------------------------------------------------------------
+//  Chỉ cần nhập 1 địa chỉ server (Base URL). App tự suy ra:
+//    - REST API : <base>/api/...
+//    - MQTT WS  : ws(s)://<host>/mqtt   (MQTT over WebSocket qua bridge của Backend)
+//
+//  Vì sao dùng bridge thay vì nối thẳng broker?
+//    App React Native chỉ nối được MQTT qua WebSocket (ws/wss).
+//    Broker public test.mosquitto.org mở 1883 + 443 nhưng KHÔNG bật WebSocket 8084.
+//    Bridge trong Backend giải quyết đúng vấn đề này: App chỉ cần 1 URL HTTPS.
+// ============================================================================
+
+export const DEFAULT_CFG = {
+  base: '',                 // VD: https://smart-parking-ltdd2.onrender.com  (rỗng = cùng host)
+  myId: 'SV01',
+  mode: 'bridge',           // 'bridge' = ws(s)://host/mqtt  |  'broker' = ws://broker:9001
+  brokerWs: '',             // chỉ dùng khi mode = 'broker'
+};
+
+// Suy ra địa chỉ MQTT WebSocket từ cấu hình
+export function resolveMqttUrl(cfg) {
+  if (cfg.mode === 'broker' && cfg.brokerWs) return cfg.brokerWs.trim();
+  const base = (cfg.base || '').trim().replace(/\/$/, '');
+  if (!base) return '';
+  const u = base.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:');
+  return `${u}/mqtt`;
+}
+
+// Suy ra địa chỉ REST từ cấu hình
+export function resolveApiBase(cfg) {
+  return (cfg.base || '').trim().replace(/\/$/, '');
+}
 
 export async function loadCfg() {
   try {
     const s = await AsyncStorage.getItem('parking_cfg');
-    return s ? { ...DEFAULT_CFG, ...JSON.parse(s) } : DEFAULT_CFG;
-  } catch { return DEFAULT_CFG; }
+    return s ? { ...DEFAULT_CFG, ...JSON.parse(s) } : { ...DEFAULT_CFG };
+  } catch { return { ...DEFAULT_CFG }; }
 }
 export async function saveCfg(c) { await AsyncStorage.setItem('parking_cfg', JSON.stringify(c)); }
 
 // Kết nối MQTT WebSocket + tự reconnect, subscribe đầy đủ topic.
 // onEvent(type, data): status | snapshot | bookingState | gate | rfid | receipt | conn
 export function connectParking(cfg, onEvent) {
-  const client = mqtt.connect(cfg.host, {
-    username: cfg.user, password: cfg.pass,
-    reconnectPeriod: 2000, connectTimeout: 5000,
+  const url = resolveMqttUrl(cfg);
+  const client = mqtt.connect(url, {
+    username: undefined, password: undefined,
+    reconnectPeriod: 2000, connectTimeout: 8000,
     clientId: 'app-' + cfg.myId + '-' + Math.random().toString(16).slice(2, 6),
+    protocolVersion: 4,
   });
   client.on('connect', () => {
     onEvent('conn', true);
@@ -26,7 +60,8 @@ export function connectParking(cfg, onEvent) {
       'parking/slot/+/status', 'parking/slots/snapshot', 'parking/booking/+/state',
       'parking/gate/barrier/state', 'parking/gate/rfid', 'parking/billing/receipt',
       'parking/system/heartbeat', 'parking/system/status',
-    ], { qos: 1 });  });
+    ], { qos: 1 });
+  });
   client.on('reconnect', () => onEvent('conn', false));
   client.on('close', () => onEvent('conn', false));
   client.on('error', () => onEvent('conn', false));

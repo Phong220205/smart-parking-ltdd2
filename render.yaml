@@ -1,0 +1,42 @@
+// ============================================================================
+//  RENDER CONFIG - Smart Parking Backend
+//  Deploy: Render.com -> New Web Service -> repo nay -> Root Directory: backend
+//  Build Command : npm install
+//  Start Command : npm start
+// ============================================================================
+
+services:
+  - type: web
+    name: smart-parking-ltdd2
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: npm install
+    startCommand: npm start
+    rootDir: backend
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "20.11.1"
+      # ---- Broker MQTT public ----
+      # test.mosquitto.org: 1883 (TCP) + 443 (TLS) - KHONG bat WebSocket 8084
+      # => App React Native noi qua bridge /mqtt cua Backend (chi can 1 URL HTTPS)
+      - key: MQTT_URL
+        value: mqtt://test.mosquitto.org:1883
+      - key: MQTT_USER
+        value: ""
+      - key: MQTT_PASS
+        value: ""
+      # ---- Duong dan WebSocket bridge ----
+      - key: MQTT_WS_PATH
+        value: /mqtt
+      # ---- Bao mat ----
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_PASS
+        generateValue: true
+      # ---- Luu tru (Render free: container khong giu du lieu -> dung storage) ----
+      # Dat DATA_FILE = /tmp/parking.json neu khong gan o dia
+      - key: DATA_FILE
+        value: /tmp/parking.json

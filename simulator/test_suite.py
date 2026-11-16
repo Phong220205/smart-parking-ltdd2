@@ -9,6 +9,7 @@ Ket qua: PASS/FAIL cho tung muc, exit code 0 = het PASS.
 """
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -280,6 +281,22 @@ def main():
     check("Validate ma o sai -> 400", bad.get("__status") == 400, str(bad.get("__status")))
     bad2 = post("/api/booking", {"slot": "P1", "user": "SV01", "action": "hack"})
     check("Validate action sai -> 400", bad2.get("__status") == 400, str(bad2.get("__status")))
+
+    # --- MQTT over WebSocket bridge (App React Native -> Backend -> Broker) ---
+    bridge = get("/api/bridge")
+    check("Endpoint /api/bridge ton tai", bridge.get("ok") and bridge.get("path") == "/mqtt",
+          f"path={bridge.get('path')}")
+    if os.name != "nt" or True:
+        try:
+            node = shutil.which("node")
+            script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "backend", "test_bridge.js")
+            p = subprocess.run([node, script, BASE.replace("http://", "ws://") + "/mqtt"],
+                               capture_output=True, text=True, timeout=40)
+            check("Bridge WebSocket: App -> Broker -> App",
+                  p.returncode == 0 and "BRIDGE HOAT DONG" in p.stdout,
+                  (p.stdout or p.stderr).strip().splitlines()[-1][:80] if (p.stdout or p.stderr) else "")
+        except Exception as e:
+            check("Bridge WebSocket: App -> Broker -> App", False, str(e))
 
     # --- Dashboard ---
     try:

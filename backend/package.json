@@ -9,9 +9,10 @@
     "dev": "node --watch server.js"
   },
   "dependencies": {
+    "cors": "^2.8.5",
+    "dayjs": "^1.11.11",
     "express": "^4.19.2",
     "mqtt": "^5.3.5",
-    "cors": "^2.8.5",
-    "dayjs": "^1.11.11"
+    "ws": "^8.23.0"
   }
 }

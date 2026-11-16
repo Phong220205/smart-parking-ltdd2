@@ -9,7 +9,7 @@ import {
   View, Text, TouchableOpacity, StyleSheet, Alert, TextInput,
   ScrollView, RefreshControl, ActivityIndicator,
 } from 'react-native';
-import { connectParking, loadCfg, saveCfg, reserveSlot, cancelSlot, gateCmd } from './parkingMqtt';
+import { connectParking, loadCfg, saveCfg, reserveSlot, cancelSlot, gateCmd, DEFAULT_CFG, resolveMqttUrl } from './parkingMqtt';
 import * as API from './api';
 
 const FEE = 3000;
@@ -27,7 +27,7 @@ const fmtTime = (ts) => (ts ? new Date(ts).toLocaleString('vi-VN') : '-');
 // =============================== MAN HINH ====================================
 export default function App() {
   const [tab, setTab] = useState('parking');
-  const [cfg, setCfg] = useState({ host: 'ws://192.168.1.10:9001', user: 'app', pass: 'app123', myId: 'SV01' });
+  const [cfg, setCfg] = useState({ ...DEFAULT_CFG });
   const [online, setOnline] = useState(false);
   const [slots, setSlots] = useState({});
   const [gate, setGate] = useState('CLOSED');
@@ -93,6 +93,7 @@ export default function App() {
   useEffect(() => {
     (async () => {
       const c = await loadCfg();
+      API.setApiBase(c.base);
       setCfg(c);
       start(c);
     })();
@@ -184,7 +185,7 @@ export default function App() {
             onGate={(cmd) => { try { gateCmd(client.current, cmd, cfg.myId); } catch {} }}
             onEnter={(id) => { API.postEnter(id, cfg.myId).catch(() => {}); }}
             onExit={(id) => { API.postExit(id, cfg.myId).catch(() => {}); }}
-            onCfg={(c) => { setCfg(c); saveCfg(c); start(c); }}
+            onCfg={(c) => { API.setApiBase(c.base); setCfg(c); saveCfg(c); start(c); }}
           />
         )}
 
@@ -201,7 +202,7 @@ export default function App() {
             user={user} token={token} cfg={cfg}
             onLogin={(u, t) => { setUser(u); setToken(t); }}
             onLogout={() => { setUser(null); setToken(null); }}
-            onCfg={(c) => { setCfg(c); saveCfg(c); start(c); }}
+            onCfg={(c) => { API.setApiBase(c.base); setCfg(c); saveCfg(c); start(c); }}
           />
         )}
 
@@ -267,14 +268,59 @@ function ParkingTab({ slots, gate, cfg, log, pending, onReserve, onCancel, onGat
 
       {/* Cai dat */}
       <TouchableOpacity style={st.linkBtn} onPress={() => setShowCfg((v) => !v)}>
-        <Text style={st.linkTxt}>{showCfg ? '▼ Ẩn cài đặt kết nối' : '⚙️ Cài đặt kết nối (thay IP máy chạy Broker)'}</Text>
+        <Text style={st.linkTxt}>{showCfg ? '▼ Ẩn cài đặt kết nối' : '⚙️ Cài đặt kết nối (nhập link server)'}</Text>
       </TouchableOpacity>
       {showCfg && (
         <View style={st.card}>
-          <Text style={st.lbl}>MQTT WebSocket</Text>
-          <TextInput style={st.inp} value={local.host} onChangeText={(t) => setLocal({ ...local, host: t })} placeholder="ws://IP:9001" />
+          <Text style={st.lbl}>Link server (Backend REST + MQTT bridge)</Text>
+          <TextInput
+            style={st.inp}
+            value={local.base}
+            onChangeText={(t) => setLocal({ ...local, base: t })}
+            placeholder="https://xxx.onrender.com  hoặc  http://192.168.1.10:3000"
+            autoCapitalize="none"
+          />
+          <Text style={st.note}>
+            Chỉ cần 1 link duy nhất. App tự suy ra:
+            {'\n'}• REST: {'{link}'}/api/...
+            {'\n'}• MQTT WebSocket: ws(s)://{'{host}'}/mqtt
+          </Text>
+
           <Text style={st.lbl}>Mã sinh viên</Text>
           <TextInput style={st.inp} value={local.myId} onChangeText={(t) => setLocal({ ...local, myId: t })} placeholder="VD: SV01" />
+
+          <Text style={st.lbl}>Chế độ kết nối</Text>
+          <View style={st.tabsMini}>
+            <TouchableOpacity
+              style={[st.miniBtn, local.mode !== 'broker' && st.miniBtnAct]}
+              onPress={() => setLocal({ ...local, mode: 'bridge' })}>
+              <Text style={[st.miniTxt, local.mode !== 'broker' && st.miniTxtAct]}>🌐 Qua Backend</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[st.miniBtn, local.mode === 'broker' && st.miniBtnAct]}
+              onPress={() => setLocal({ ...local, mode: 'broker' })}>
+              <Text style={[st.miniTxt, local.mode === 'broker' && st.miniTxtAct]}>📡 Thẳng Broker</Text>
+            </TouchableOpacity>
+          </View>
+
+          {local.mode === 'broker' && (
+            <>
+              <Text style={st.lbl}>MQTT WebSocket của Broker (nếu broker có bật WS)</Text>
+              <TextInput
+                style={st.inp}
+                value={local.brokerWs}
+                onChangeText={(t) => setLocal({ ...local, brokerWs: t })}
+                placeholder="ws://192.168.1.10:9001"
+                autoCapitalize="none"
+              />
+            </>
+          )}
+
+          <View style={st.card}>
+            <Text style={st.rowSub}>URL MQTT sẽ dùng:</Text>
+            <Text style={st.log}>{resolveMqttUrl(local) || '(chưa nhập link server)'}</Text>
+          </View>
+
           <TouchableOpacity style={st.btn} onPress={() => onCfg(local)}><Text style={st.btnT}>🔌 KẾT NỐI LẠI</Text></TouchableOpacity>
         </View>
       )}

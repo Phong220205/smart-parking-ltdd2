@@ -17,7 +17,9 @@ import cors from "cors";
 import path from "path";
 import fs from "fs";
 import crypto from "crypto";
+import http from "http";
 import { fileURLToPath } from "url";
+import { createMqttWsBridge } from "./mqttWsBridge.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -38,7 +40,8 @@ app.use((req, res, next) => {
 
 const MQTT_URL  = process.env.MQTT_URL  || "mqtt://localhost:1883";
 const MQTT_USER = process.env.MQTT_USER === undefined ? "esp32" : process.env.MQTT_USER;
-const MQTT_PASS = process.env.MQTT_PASS === undefined ? "esp32123" : process.env.MQTT_PASS;const PORT      = process.env.PORT      || 3000;
+const MQTT_PASS = process.env.MQTT_PASS === undefined ? "esp32123" : process.env.MQTT_PASS;
+const PORT      = process.env.PORT      || 3000;
 const DATA_FILE = process.env.DATA_FILE || path.join(__dirname, "..", "data", "parking.json");
 const SECRET    = process.env.JWT_SECRET || "smart-parking-ltdd2-secret";
 const ADMIN_PW  = process.env.ADMIN_PASS || "admin123";
@@ -482,6 +485,23 @@ app.get("/api/health/deep", (req, res) => {
   });
 });
 
+// ============================ MQTT-over-WEBSOCKET BRIDGE ====================
+// App React Native chi noi duoc MQTT qua WebSocket. Bridge nay lam proxy:
+//   App --wss://<server>/mqtt--> BRIDGE --mqtt://<broker>--> Broker
+// => App chi can 1 duong dan HTTPS, khong phai mo port broker public.
+const BRIDGE_PATH = process.env.MQTT_WS_PATH || "/mqtt";
+const bridge = createMqttWsBridge({
+  mqtt,
+  path: BRIDGE_PATH,
+  brokerUrl: MQTT_URL,
+  username: MQTT_USER || undefined,
+  password: MQTT_PASS || undefined,
+  onLog: (m) => console.log(m),
+});
+
+// GET /api/bridge - thong tin trang thai bridge (App + GV xem duoc)
+app.get("/api/bridge", (req, res) => res.json({ ok: true, path: BRIDGE_PATH, ...bridge.stats() }));
+
 // 404 JSON cho API
 app.use("/api", (req, res) => res.status(404).json({ ok: false, error: "Khong tim thay endpoint" }));
 
@@ -495,11 +515,15 @@ app.use((err, req, res, next) => {
 app.get("/", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
 app.use(express.static(path.join(__dirname, "public")));
 
-app.listen(PORT, () => {
+const server = http.createServer(app);
+bridge.handleUpgrade(server);
+
+server.listen(PORT, () => {
   console.log("=========================================");
   console.log(" Backend Smart Parking");
   console.log(" HTTP : http://localhost:" + PORT);
   console.log(" MQTT : " + MQTT_URL);
+  console.log(" WS   : ws://localhost:" + PORT + BRIDGE_PATH + "  (MQTT over WebSocket)");
   console.log(" DATA : " + DATA_FILE);
   console.log("=========================================");
 });
