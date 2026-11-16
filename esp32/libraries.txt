@@ -3,4 +3,4 @@ PubSubClient
 ArduinoJson
 ESP32Servo
 MFRC522
-# LiquidCrystal la thu vien mac dinh cua Arduino, khong can cai
+LiquidCrystal
