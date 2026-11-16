@@ -67,6 +67,15 @@ struct Slot {
 };
 Slot slots[NUM_SLOTS];
 
+// " Bong" cam bien IR: gia tri cua cam bien gan nhat.
+// Vong lap doc IR so sanh irShadow voi tin hieu hien tai.
+// Khong dung slots[].occupied de so sanh, vi lenh thu cong (ENTER/EXIT
+// qua Serial) cung set occupied -> se bi vong lap ghi de ngay lap tuc.
+bool irShadow[NUM_SLOTS] = {false, false, false, false, false, false};
+
+// O nao dang duoc dieu khien thu cong (lenh ENTER/EXIT tu Serial).
+// Vong lap doc IR bo qua cac o nay de khong ghi de lenh cua nguoi dung.
+bool manualMode[NUM_SLOTS] = {false, false, false, false, false, false};
 String gateState = "CLOSED";
 String gateOpenedBy = "";
 unsigned long gateOpenedAt = 0;
@@ -260,6 +269,14 @@ long calcFee(unsigned long ms) {
   return (long)(((minutes + 59) / 60) * FEE_PER_HOUR);
 }
 
+// Xe vao o
+void carEnters(int i, String user) {
+  slots[i].occupied = true;
+  slots[i].enterAt = millis();
+  slots[i].currentUser = user;
+  pubSlot(i); pubSnapshot();
+}
+
 // Xe ra khoi o -> tinh phi + phat han
 void carLeaves(int i) {
   unsigned long dur = slots[i].enterAt ? (millis() - slots[i].enterAt) : 60000UL;
@@ -280,15 +297,6 @@ void carLeaves(int i) {
   slots[i].enterAt = 0;
   pubSlot(i); pubSnapshot();
 }
-
-// Xe vao o
-void carEnters(int i, String user) {
-  slots[i].occupied = true;
-  slots[i].enterAt = millis();
-  slots[i].currentUser = user;
-  pubSlot(i); pubSnapshot();
-}
-
 // Quet the RFID -> mo barrier + ghi nhan
 void onRfidCard(String card) {
   lastRfidCard = card;
@@ -353,12 +361,17 @@ void handleBooking(String slot, String user, String act, String req) {
     }
   }
   else if (act == "enter") {
-    // App xac nhan xe da vao
+    // App/Serial xac nhan xe da vao -> chuyen o sang che do dieu khien thu cong
+    manualMode[i] = true;
     carEnters(i, user);
     pubBookingState(slot, "ENTERED", user, req, true, "Da ghi nhan xe vao");
+    say("XE VAO " + slot, 2000);
+    beep(1);
   }
   else if (act == "exit") {
-    // App xac nhan xe ra -> tinh phi
+    // App/Serial xac nhan xe ra -> tinh phi, tra o ve che do cam bien binh thuong
+    manualMode[i] = false;
+    irShadow[i] = (digitalRead(IR_PIN[i]) == LOW);
     carLeaves(i);
     pubBookingState(slot, "FREE", user, req, true, "Da ghi nhan xe ra");
   }
@@ -392,7 +405,10 @@ void setup() {
   Serial.println(" SMART PARKING - ESP32 (ban nang cap)");
   Serial.println("=========================================");
 
-  for (int i = 0; i < NUM_SLOTS; i++) pinMode(IR_PIN[i], INPUT_PULLUP);
+  for (int i = 0; i < NUM_SLOTS; i++) {
+    pinMode(IR_PIN[i], INPUT_PULLUP);
+    irShadow[i] = (digitalRead(IR_PIN[i]) == LOW);
+  }
   pinMode(BUZZER_PIN, OUTPUT);
   barrier.attach(SERVO_PIN); barrier.write(0);
 
@@ -519,14 +535,18 @@ void loop() {
   }
 
   // --- Doc cam bien IR 6 o ---
+  // So sanh voi irShadow (khong phai slots[].occupied) de lenh thu cong
+  // (ENTER/EXIT qua Serial) khong bi vong lap nay ghi de ngay.
   static unsigned long lastRead = 0;
   if (millis() - lastRead > 200) {
     lastRead = millis();
     bool ch = false;
     for (int i = 0; i < NUM_SLOTS; i++) {
       bool occ = (digitalRead(IR_PIN[i]) == LOW);
-      if (occ != slots[i].occupied) {
-        if (occ) {
+      if (occ == irShadow[i]) continue;   // khong doi -> bo qua
+      irShadow[i] = occ;
+      if (manualMode[i]) continue;        // o do nguoi dung dieu khien -> bo qua
+      if (occ) {
           // Xe vao: giu user da dat cho neu co
           String u = slots[i].reservedBy;
           carEnters(i, u);
