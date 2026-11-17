@@ -44,7 +44,7 @@
 13e. **Ảnh App mở tab Cài đặt** – chỉ 1 ô "Link server" đã điền
    `https://smart-parking-ltdd2.onrender.com`, chế độ "Qua Backend", URL MQTT tự sinh.
 
-### Nhóm 3c – Ảnh minh chứng đã chụp (docs/anh/ — 15 ảnh)
+### Nhóm 3c – Ảnh minh chứng đã chụp (docs/anh/ — 16 ảnh)
 
 **Lab 1 – Phần cứng & Firmware (Wokwi)**
 | # | File | Nội dung |
@@ -67,6 +67,7 @@
 | 8 | `cloud-sodobai.png` | Dashboard tab **Sơ đồ bãi**: lưới 6 ô màu, log hệ thống realtime |
 | 9 | `cloud-thongke.png` | Dashboard tab **Thống kê**: 4 KPI + 3 biểu đồ Chart.js (cột 7 ngày, đường theo giờ, tròn top user) |
 | 10 | `cloud-lichsu.png` | Dashboard tab **Lịch sử**: 3 bảng — hóa đơn tính phí · lịch sử đặt chỗ · log thẻ RFID |
+| 10b | `cloud-lichsu-chongtrung.png` | **Bằng chứng chống đặt trùng** trong bảng "Lịch sử đặt chỗ": dòng `P4 · SV02 · reserve (O da duoc dat boi SV01) · LOI` (thẻ đỏ) |
 | 11 | `cloud-nguoidung.png` | Dashboard tab **Người dùng**: đăng ký SV03 → "Đăng ký thành công" + bảng user (lượt xe, chi tiêu) |
 | 12 | `cloud-caidat.png` | Dashboard tab **Cài đặt**: Link server + danh sách endpoint REST/SSE |
 | 13 | `terminal-api-cloud.png` | Terminal: `curl /api/health` → `{"ok":true,"mqtt":true,"online":true,"slots":6}` · `curl /api/bridge` → `{"path":"/mqtt","embedded":{"clients":2,"subscriptions":10}}` · `node test_bridge.js` → `=== KET QUA: BRIDGE HOAT DONG (2 chieu) ===` |
