@@ -193,6 +193,24 @@ export function createAuthBroker({ tcpPort = 1883, wsPort = 9001, onLog = () => 
   };
 
   // --------------------- MỞ CỔNG MQTT/TCP + MQTT/WEBSOCKET ------------------
+  // Ghi log + ghi vào nhật ký khi client ngắt kết nối -> giúp chẩn đoán vì sao
+  // ESP32/App rớt (giữ timeout MQTT, WebSocket bị đóng, keepalive quá hạn...)
+  aedes.on("clientDisconnect", (client) => {
+    const msg = `[BROKER] Client ngat ket noi: ${client?.id} (user=${client?.username || "?"})`;
+    onLog(msg);
+    onAuth({ clientId: client?.id || "?", user: client?.username || "", ok: true, reason: "disconnect" });
+  });
+  aedes.on("keepaliveTimeout", (client) => {
+    const msg = `[BROKER] Client qua han keepalive: ${client?.id} (user=${client?.username || "?"})`;
+    onLog(msg);
+    onAuth({ clientId: client?.id || "?", user: client?.username || "", ok: false, reason: "keepalive-timeout" });
+  });
+  aedes.on("clientError", (client, err) => {
+    const msg = `[BROKER] Loi client ${client?.id || "?"}: ${err?.message}`;
+    onLog(msg);
+    onAuth({ clientId: client?.id || "?", user: client?.username || "", ok: false, reason: `error: ${err?.message}` });
+  });
+
   const tcpServer = createServer(aedes.handle);
   tcpServer.listen(tcpPort, "0.0.0.0", () => {
     onLog(`[BROKER] MQTT/TCP dang lang nghe tren cong ${tcpPort}`);
@@ -214,7 +232,6 @@ export function createAuthBroker({ tcpPort = 1883, wsPort = 9001, onLog = () => 
     const duplex = websocketStream(ws);
     aedes.handle(duplex);
   });
-
   return {
     aedes,
     tcpServer,

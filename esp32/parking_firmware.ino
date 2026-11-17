@@ -81,7 +81,7 @@ class MqttWsClient : public Client {
 public:
   MqttWsClient(WiFiClientSecure &tls, const char *host, uint16_t port, const char *path)
     : _tls(tls), _host(host), _port(port), _path(path) {
-    _wsReady = false; _rxLen = 0; _rxPos = 0; _rawLen = 0;
+    _wsReady = false; _rxLen = 0; _rxPos = 0; _rawLen = 0; _lastPing = 0;
   }
 
   // ---- Interface Client mà PubSubClient yêu cầu ----
@@ -89,11 +89,14 @@ public:
   int connect(const char *host, uint16_t port) override { (void)host; (void)port; return handshake(); }
   size_t write(uint8_t b) override { return write(&b, 1); }
   size_t write(const uint8_t *buf, size_t size) override {
-    if (!_wsReady) return 0;
-    if (!sendFrame(0x2, buf, size)) return 0;   // 0x2 = binary frame
+    if (!_wsReady) { Serial.println("[WS] write that bai - ket noi chua san sang"); return 0; }
+    if (!sendFrame(0x2, buf, size)) {   // 0x2 = binary frame
+      Serial.println("[WS] Ghi frame that bai");
+      return 0;
+    }
     return size;
   }
-  int available() override { pump(); return _rxLen - _rxPos; }
+  int available() override { pump(); maybePing(); return _rxLen - _rxPos; }
   int read() override {
     if (available() <= 0) return -1;
     return _rx[_rxPos++];
@@ -118,6 +121,21 @@ private:
   bool _wsReady;
   uint8_t _rx[4096]; int _rxLen; int _rxPos;   // dữ liệu MQTT đã giải mã
   uint8_t _raw[8192]; int _rawLen;              // dữ liệu thô (frame WebSocket)
+  unsigned long _lastPing;                      // lần gửi PING WebSocket gần nhất
+
+  // [N7] Gửi PING của WebSocket (opcode 0x9) mỗi WS_PING_MS giây.
+  //      LÝ DO BẮT BUỘC: các CDN/load-balancer (Render đứng sau Cloudflare)
+  //      sẽ ĐÓNG kết nối WebSocket nếu không có dữ liệu đi qua trong khoảng
+  //      ~50-60 giây (idle timeout). PING giữ kết nối sống -> ESP32 không bị
+  //      rớt khỏi broker. (Đây cũng là cơ chế "heartbeat" ở tầng WebSocket.)
+  static const unsigned long WS_PING_MS = 12000UL;
+
+  void maybePing() {
+    if (!_wsReady) return;
+    if (millis() - _lastPing < WS_PING_MS) return;
+    _lastPing = millis();
+    sendFrame(0x9, nullptr, 0);   // 0x9 = Ping
+  }
 
   // Sinh "Sec-WebSocket-Key" (16 byte ngẫu nhiên -> Base64)
   String makeKey() {
@@ -440,6 +458,7 @@ unsigned long gateOpenedAt = 0;    // thời điểm mở cổng
 long revenueToday = 0;             // tổng doanh thu trong ngày
 unsigned long lastLcd = 0, lastMqttTry = 0, lastBeat = 0, lastSnapshot = 0, lastExpiry = 0;
 bool mqttOK = false;               // đang kết nối broker hay không
+bool mqttWasOK = false;            // lần trước đó kết nối có thành công không (để log thời điểm rớt)
 bool oledOK = false;               // OLED khởi tạo thành công hay không
 String lastRfidCard = "";          // thẻ RFID quét gần nhất
 String statusMsg = "SAN SANG";     // dòng thông báo ngắn trên OLED
@@ -1048,8 +1067,16 @@ void setup() {
 #endif
   mqtt.setCallback(onMsg);
   mqtt.setBufferSize(2048);
-  mqtt.setKeepAlive(30);          // timeout 30s -> broker tự ngắt nếu ESP32 im lặng
-  mqtt.setSocketTimeout(5);       // không chờ socket quá 5s khi mạng chậm
+  // [N1] Keep-alive NGẮN (10 giây) là rất quan trọng:
+  //   - Broker (aedes) sẽ ngắt client nếu không nhận gói tin nào trong
+  //     keepalive*1.5 giây.
+  //   - Cloudflare (lớp trước Render) sẽ ĐÓNG kết nối WebSocket nếu không
+  //     có dữ liệu đi qua trong ~30-50 giây.
+  //   - PubSubClient chỉ gửi PINGREQ khi đã hết keepAlive giây không nhận
+  //     được gì, nên keepAlive phải NHỎ hơn idle timeout của Cloudflare,
+  //     nếu không ESP32 sẽ bị rớt kết nối.
+  mqtt.setKeepAlive(10);
+  mqtt.setSocketTimeout(3);       // không chờ socket quá 3s khi mạng chậm
 #if MQTT_USE_WS
   // [N1] Đường truyền = wss:// (TLS + WebSocket) -> dữ liệu được mã hoá.
 #if MQTT_USE_CA
@@ -1177,11 +1204,17 @@ void loop() {
     mqttOK = false;
     if (wifiReady && millis() - lastMqttTry > 3000) {
       lastMqttTry = millis();
+      // [N1] Ghi lại thời điểm rớt để tiện chẩn đoán (giây kể từ lúc bật).
+      if (mqttWasOK) {
+        Serial.printf("[MQTT] Mat ket noi sau %lu giay (uptime)\n", millis() / 1000);
+        mqttWasOK = false;
+      }
       Serial.println("[MQTT] Thu ket noi lai...");
       mqttTryConnect();
     }
   } else {
     mqttOK = true;
+    mqttWasOK = true;
     mqtt.loop();
   }
 
@@ -1284,8 +1317,11 @@ void loop() {
     Serial.println("d");
   }
 
-  // --- Heartbeat (nhịp sống) gửi lên Server mỗi 15 giây ---
-  if (mqtt.connected() && millis() - lastBeat > 15000) {
+  // --- Heartbeat (nhịp sống) gửi lên Server mỗi 8 giây ---
+  // [N1] Gửi thường xuyên (8 giây) là rất quan trọng khi dùng MQTT qua
+  //      WebSocket + Cloudflare: mỗi lần publish đều tạo ra dữ liệu đi qua
+  //      mạng -> giữ cho kết nối WebSocket không bị đóng do "idle".
+  if (mqtt.connected() && millis() - lastBeat > 8000) {
     lastBeat = millis();
     StaticJsonDocument<384> h;
     h["uptime"] = millis() / 1000;        // số giây đã chạy
