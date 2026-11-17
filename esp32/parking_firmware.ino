@@ -90,6 +90,8 @@ public:
   size_t write(uint8_t b) override { return write(&b, 1); }
   size_t write(const uint8_t *buf, size_t size) override {
     if (!_wsReady) { Serial.println("[WS] write that bai - ket noi chua san sang"); return 0; }
+    // [FIX] Gửi TRỌN VẸN frame (writeAll bên trong sendFrame) - nếu ghi
+    //   thiếu byte thì frame WebSocket bị hỏng -> broker không hiểu.
     if (!sendFrame(0x2, buf, size)) {   // 0x2 = binary frame
       Serial.println("[WS] Ghi frame that bai");
       return 0;
@@ -232,7 +234,7 @@ private:
     // tên này trong header phản hồi 101, nếu không mời -> server từ chối).
     req += "Sec-WebSocket-Protocol: mqtt\r\n";
     req += "\r\n";
-    if (_tls.write((const uint8_t *)req.c_str(), req.length()) == 0) {
+    if (!writeAll((const uint8_t *)req.c_str(), req.length())) {
       Serial.println("[WS] Ghi HTTP request that bai");
       _tls.stop(); return 0;
     }
@@ -284,6 +286,23 @@ private:
   }
 
   // Gửi 1 WebSocket frame (luôn có mask vì client -> server phải mask)
+  // [FIX - QUAN TRỌNG] _tls.write() có thể ghi PARTIAL (trả về số byte
+  //   đã ghi < số byte yêu cầu) khi bộ đệm socket bị đầy. Nếu ta coi
+  //   "write trả về > 0" là thành công thì frame WebSocket sẽ bị cắt cụt ->
+  //   broker nhận dữ liệu rác -> không đếm được PINGREQ -> ngắt client
+  //   với lỗi "keep alive timeout". Vì vậy ta PHẢI ghi đủ (vòng lặp) và
+  //   kiểm tra đúng số byte đã ghi.
+  bool writeAll(const uint8_t *buf, size_t len) {
+    size_t off = 0;
+    while (off < len) {
+      size_t n = _tls.write(buf + off, len - off);
+      if (n <= 0) return false;              // lỗi hoặc socket đã đóng
+      off += n;
+      wdtKick();                             // giữ Watchdog sống khi ghi lâu
+    }
+    return true;
+  }
+
   bool sendFrame(uint8_t opcode, const uint8_t *data, size_t len) {
     uint8_t hdr[14]; size_t h = 0;
     hdr[h++] = 0x80 | opcode;                       // FIN + opcode
@@ -300,13 +319,13 @@ private:
       for (int i = 7; i >= 0; i--) hdr[h++] = (len >> (8 * i)) & 0xff;
     }
     memcpy(hdr + h, mask, 4); h += 4;
-    if (_tls.write(hdr, h) == 0) return false;
+    if (!writeAll(hdr, h)) return false;
 
     uint8_t chunk[256]; size_t off = 0;
     while (off < len) {
       size_t n = len - off; if (n > sizeof(chunk)) n = sizeof(chunk);
       for (size_t i = 0; i < n; i++) chunk[i] = data[off + i] ^ mask[(off + i) % 4];
-      if (_tls.write(chunk, n) == 0) return false;
+      if (!writeAll(chunk, n)) return false;
       off += n;
     }
     return true;

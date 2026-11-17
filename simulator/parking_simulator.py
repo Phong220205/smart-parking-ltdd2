@@ -19,7 +19,7 @@ Chay:
   python simulator/parking_simulator.py --mode chaos   # test mat mang / dat trung
 """
 
-import time, json, random, argparse, threading, sys, os
+import time, json, random, argparse, threading, sys, os, urllib.parse
 try:
     import paho.mqtt.client as mqtt
 except ImportError:
@@ -49,6 +49,10 @@ parser.add_argument("--client-id", default=None,
                     help="Client ID cung cho MQTT. Client moi se duoc broker kick client cu cung ID")
 parser.add_argument("--tls", action="store_true",
                     help="Dung MQTT/TLS (cong 8883) - mat hoa SSL/TLS")
+parser.add_argument("--ws", default="",
+                    help="Dung MQTT-over-WebSocket tai duong dan nay (vd /mqtt). "
+                         "Khi dung, --host phai la domain/duong dan day du: "
+                         "--ws wss://smart-parking-ltdd2.onrender.com/mqtt")
 parser.add_argument("--ca", default=None,
                     help="File CA de xac thuc chung thu broker (mac dinh: broker/config/certs/ca.crt)")
 args = parser.parse_args()
@@ -73,6 +77,39 @@ if args.tls:
         args.port = 8883
     print(f"[TLS] Bat SSL/TLS, CA={_ca}")
 client.will_set("parking/system/status", json.dumps({"online": False}), qos=1, retain=True)
+
+# ---------------------- MQTT-over-WEBSOCKET (giong ESP32) ---------------------
+# Khi --ws duoc chi dinh, ta noi qua wss://... thay vi cong MQTT/TCP.
+# Day la CUNG duong dan ma firmware ESP32 (parking_firmware.ino) su dung,
+# nho do simulator phong dat duoc hanh xinh cua thiet bi that.
+if args.ws:
+    ws_url = args.ws
+    if "://" not in ws_url:
+        ws_url = ("wss://" if args.tls else "ws://") + ws_url
+    parsed = urllib.parse.urlparse(ws_url)
+    ws_host = parsed.hostname or args.host
+    ws_path = parsed.path or "/mqtt"
+    ws_port = parsed.port or (443 if parsed.scheme == "wss" else 80)
+    if hasattr(client, "ws_set_options"):
+        # paho-mqtt >= 2.0: dung transport "websockets" + ws_set_options
+        client.ws_set_options(path=ws_path)
+        client = mqtt.Client(client_id=args.client_id or f"sim-esp32-{random.randint(0, 99999)}",
+                             protocol=mqtt.MQTTv311, transport="websockets")
+        if args.user and args.password and not args.no_auth:
+            client.username_pw_set(args.user, args.password)
+        client.ws_set_options(path=ws_path)
+        client.will_set("parking/system/status", json.dumps({"online": False}), qos=1, retain=True)
+        if args.tls:
+            client.tls_set()
+    else:
+        # paho-mqtt 1.x: dung WebSocketWrapper
+        try:
+            from paho.mqtt.client import WebSocketWrapper
+        except ImportError:
+            print("Can paho-mqtt >= 1.6 de ho tro MQTT-over-WebSocket")
+            sys.exit(1)
+        client = WebSocketWrapper(client, ws_url, subprotocols=["mqtt"])
+    print(f"[WS] MQTT-over-WebSocket -> {ws_url} (path={ws_path})")
 
 
 # ------------------------------- PUBLISH -------------------------------------
@@ -261,7 +298,11 @@ def beat_loop():
 # ------------------------------- MAIN ----------------------------------------
 client.on_message = on_message
 try:
-    client.connect(args.host, args.port, 60)
+    if args.ws:
+        # WebSocket: chi can goi connect() (khong co host/port cho paho 2.x).
+        client.connect(ws_host, ws_port, 60)
+    else:
+        client.connect(args.host, args.port, 60)
 except Exception as e:
     print(f"Khong ket noi duoc broker {args.host}:{args.port} - {e}")
     sys.exit(1)
