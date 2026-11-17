@@ -568,6 +568,19 @@ app.get("/api/broker/auth-log", (req, res) => res.json({
   events: authEvents.slice(-50).reverse(),
 }));
 
+// GET /api/version - PHIÊN BẢN ĐANG CHẠY (dùng để xác nhận deploy thành công)
+// "build" là mã commit của bản build trên Render -> thay đổi "build" nghĩa là
+// đã deploy code mới (hữu ích khi thầy giáo / nhóm kiểm tra hệ thống đang chạy).
+app.get("/api/version", (req, res) => res.json({
+  ok: true,
+  build: process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || "local",
+  aedes: embeddedBroker ? embeddedBroker.aedes.version : null,
+  adapter: "mqttWsAdapter-v2",
+  node: process.version,
+  uptimeSec: Math.floor(process.uptime()),
+  ts: now(),
+}));
+
 // 404 JSON cho API
 app.use("/api", (req, res) => res.status(404).json({ ok: false, error: "Khong tim thay endpoint" }));
 

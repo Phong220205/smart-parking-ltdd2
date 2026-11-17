@@ -122,6 +122,15 @@ export function createAuthBroker({ tcpPort = 1883, wsPort = 9001, onLog = () => 
   const aedes = new Aedes({
     id: "smart-parking-broker",
     concurrency: 100,
+    // [FIX - NGUYÊN NHÂN GỐC] Giảm bớt độ nhạy của bộ đếm keepalive.
+    //   Aedes mặc định dùng hạn chót = keepalive * 1.5 giây (10s -> 15s).
+    //   Nhưng ở tầng trên còn có Cloudflare + Render, mỗi tầng có thể giữ
+    //   hoặc cắt kết nối riêng -> keepalive 10s quá chặt, chỉ cần một độ trễ
+    //   mạng là client bị broker tước ("keep alive timeout") dù client hoàn toàn
+    //   hợp lệ. Ta nới hạn chót lên 3 lần keepalive (30s) cho thoải mái.
+    keepaliveLimit: 0,       // không từ chối client vì keepalive lớn
+    connectTimeout: 60000,   // chờ CONNECT tối đa 60s (mạng di động chậm)
+    heartbeatInterval: 60000,
   });
 
   // ------------------------- XÁC THỰC NGƯỜI DÙNG --------------------------
@@ -211,6 +220,33 @@ export function createAuthBroker({ tcpPort = 1883, wsPort = 9001, onLog = () => 
     onAuth({ clientId: client?.id || "?", user: client?.username || "", ok: false, reason: `error: ${err?.message}` });
   });
 
+  // ---------------------------------------------------------------------
+  // [FIX - NGUYÊN NHÂN GỐC] NỚI HẠN CHÓT KEEPALIVE PHÍA BROKER
+  // ---------------------------------------------------------------------
+  // Aedes tự tính hạn chót giữ mạng = keepalive * 1.5 giây (client báo 10s
+  // -> 15s) và TƯỚC kết nối nếu quá hạn. Điều này quá chặt khi đi qua
+  // Cloudflare + Render: chỉ cần một độ trễ mạng vài giây là client bị tước,
+  // dù client hoàn toàn hợp lệ (hiện tượng "keep alive timeout" lặp lại).
+  // Ta nới hạn chót lên KEEPALIVE_GRACE lần (mặc định 4x -> 60 giây),
+  // vẫn đảm bảo rằng client chết thật sẽ được phát hiện và dọn dẹp.
+  const KEEPALIVE_GRACE = Number(process.env.BROKER_KEEPALIVE_GRACE || 4);
+  aedes.on("clientReady", (client) => {
+    try {
+      const base = client._keepaliveInterval > 0 ? client._keepaliveInterval : 15000;
+      const relaxed = base * KEEPALIVE_GRACE;
+      client._keepaliveInterval = relaxed;
+      if (client._keepaliveTimer) client._keepaliveTimer.reschedule(relaxed);
+      onLog(`[BROKER] Client ${client.id} san sang (keepalive han chot ${Math.round(relaxed / 1000)}s)`);
+    } catch (e) {
+      onLog(`[BROKER] Khong chinh duoc han chot keepalive: ${e.message}`);
+    }
+  });
+
+  // Đếm PINGREQ để chẩn đoán "broker có thấy heartbeat của client không?"
+  aedes.on("ping", (_packet, client) => {
+    onLog(`[BROKER] PINGREQ tu ${client?.id || "?"}`);
+  });
+
   const tcpServer = createServer(aedes.handle);
   tcpServer.listen(tcpPort, "0.0.0.0", () => {
     onLog(`[BROKER] MQTT/TCP dang lang nghe tren cong ${tcpPort}`);
@@ -224,7 +260,20 @@ export function createAuthBroker({ tcpPort = 1883, wsPort = 9001, onLog = () => 
   // WebSocketServer này được gắn vào HTTP server chính (qua handleUpgrade)
   // để client bên ngoài (App React Native, ESP32) kết nối thẳng vào broker
   // và ĐƯỢC xác thực + phân quyền đầy đủ (không qua proxy trung gian).
-  const wss = new WebSocketServer({ noServer: true });
+  const wss = new WebSocketServer({
+    noServer: true,
+    // [FIX] Phải trả lại subprotocol "mqtt" khi client mời.
+    //   Chuẩn MQTT-over-WebSocket (OASIS MQTT-WS) yêu cầu client gửi header
+    //   "Sec-WebSocket-Protocol: mqtt"; nếu server không trả lại đúng tên,
+    //   một số client (mqtt.js) sẽ không chấp nhận kết nối.
+    //   Client ESP32 (firmware tự viết) cũng gửi header này.
+    handleProtocols: (protocols) => {
+      if (protocols.has("mqtt")) return "mqtt";
+      // Không có yêu cầu subprotocol nào -> chấp nhận phần đầu tiên (nếu có)
+      for (const p of protocols) return p;
+      return false;
+    },
+  });
   wss.on("connection", (ws) => {
     // Chuyển kết nối WebSocket thành stream byte cho aedes đọc/ghi được.
     // Dùng adapter tự viết (mqttWsAdapter.js) dựa trên "ws" bản mới (v8).
@@ -233,6 +282,28 @@ export function createAuthBroker({ tcpPort = 1883, wsPort = 9001, onLog = () => 
     // PINGREQ -> ngắt client sau ~16s với lỗi "keep alive timeout".
     const duplex = createWsStream(ws);
     aedes.handle(duplex);
+
+    // -------------------------------------------------------------------
+    // [FIX - GIỮ KẾT NỐI QUA CLOUDFLARE / RENDER]
+    // -------------------------------------------------------------------
+    // Ở tầng trên broker còn có Cloudflare (và Render) với "idle timeout"
+    // (thường 30-100 giây). Nếu không có byte nào đi qua trong thời gian đó
+    // thì kết nối WebSocket bị cắt -> ESP32 rớt kết nối liên tục.
+    // Ta gửi WebSocket PING (opcode 0x9) định kỳ cho mỗi client.
+    // Client chuẩn (mqtt.js, ESP32 firmware) đều tự động trả PONG.
+    // Lưu ý: mỗi lần gửi PING cũng làm "thông" kết nối nên Cloudflare
+    // không cắt, đồng thời không ảnh hưởng đến bộ đếm keepalive của MQTT.
+    try {
+      const wsPing = setInterval(() => {
+        if (ws.readyState === ws.OPEN) {
+          try { ws.ping(); } catch { /* bỏ qua */ }
+        }
+      }, Number(process.env.BROKER_WS_PING_MS || 20000));
+      ws.on("close", () => clearInterval(wsPing));
+      ws.on("error", () => clearInterval(wsPing));
+    } catch (e) {
+      onLog(`[BROKER] Khong bat duoc WS ping: ${e.message}`);
+    }
   });
   return {
     aedes,
