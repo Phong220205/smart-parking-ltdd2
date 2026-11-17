@@ -52,6 +52,59 @@ export function resolveApiBase(cfg) {
   return (cfg.base || '').trim().replace(/\/$/, '');
 }
 
+/**
+ * Tách URL WebSocket thành object cho mqtt.connect().
+ *
+ * LY DO: mqtt v5 goi require('url').parse(url, true) de tach hostname/port/path.
+ * Tren React Native, module 'url' duoc Metro map ve
+ * react-native/Libraries/Blob/URL.js - mot WHATWG URL class KHONG co static
+ * .parse() (do la API Node legacy). => parsedUrl undefined =>
+ * "Could not determine host. Specify host manually."
+ *
+ * Giai phap: tu tach URL bang regex (khong phu thuoc module nao), roi truyền
+ * object { protocol, hostname, port, path } vao mqtt.connect().
+ * Khi truyen OBJECT, mqtt bo qua hoan toan nhanh parse URL string
+ * (xem mqtt/build/lib/connect/index.js: "if (typeof brokerUrl === 'object')").
+ */
+export function parseWsUrl(rawUrl) {
+  const u = String(rawUrl || '').trim();
+  const m = /^([a-zA-Z][a-zA-Z0-9+.-]*):\/\/([^/?#]*)([^?#]*)(\?[^#]*)?/.exec(u);
+  if (!m) return null;
+  const [, scheme, authority, path = '/', search = ''] = m;
+  // authority co thể chua user:pass@host:port
+  let hostPart = authority;
+  const at = hostPart.lastIndexOf('@');
+  let auth = '';
+  if (at >= 0) {
+    auth = hostPart.slice(0, at);
+    hostPart = hostPart.slice(at + 1);
+  }
+  // IPv6 [::1]:8081
+  let hostname = hostPart;
+  let port = '';
+  if (hostPart.startsWith('[')) {
+    const close = hostPart.indexOf(']');
+    hostname = hostPart.slice(1, close);
+    const rest = hostPart.slice(close + 1);
+    if (rest.startsWith(':')) port = rest.slice(1);
+  } else {
+    const colon = hostPart.lastIndexOf(':');
+    if (colon >= 0) {
+      hostname = hostPart.slice(0, colon);
+      port = hostPart.slice(colon + 1);
+    }
+  }
+  if (!hostname) return null;
+  const defaultPort = scheme === 'wss' || scheme === 'https' ? 443 : 80;
+  return {
+    protocol: scheme,
+    hostname,
+    port: port ? Number(port) : defaultPort,
+    path: (path || '/') + (search || ''),
+    auth,
+  };
+}
+
 export async function loadCfg() {
   try {
     const s = await AsyncStorage.getItem('parking_cfg');
@@ -84,7 +137,15 @@ export function connectParking(cfg, onEvent) {
       opts.rejectUnauthorized = cfg.rejectUnauthorized !== false;
     }
   }
-  const client = mqtt.connect(url, opts);
+  // Parse URL thu cong va truyenn OBJECT vao mqtt.connect().
+  // Ly do: xem parseWsUrl() - module 'url' cua RN khong co static .parse()
+  // ma mqtt v5 phai dung de tach hostname/port/path tu URL string.
+  const parsed = parseWsUrl(url);
+  const target = parsed
+    ? { protocol: parsed.protocol, hostname: parsed.hostname, port: parsed.port, path: parsed.path }
+    : url;
+
+  const client = mqtt.connect(target, opts);
   client.on('connect', () => {
     onEvent('conn', true);
     client.subscribe([
