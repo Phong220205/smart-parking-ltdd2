@@ -331,6 +331,11 @@ mc.on("message", (topic, buf) => {
     if (st === "RESERVED" && d.ok) {
       pushLog(db.bookings, { slot: d.slot, user: d.user, action: "reserve", ok: true, requestId: d.requestId, ts: now() });
       db.counters.totalBookings += 1;
+    } else if (st === "RESERVED" && !d.ok) {
+      // Đặt chỗ BỊ TỪ CHỐI (ô đã có xe / đã có người khác đặt).
+      // Phải ghi lại lịch sử để Dashboard tab "Lịch sử" hiển thị được
+      // bằng chứng tính năng chống đặt trùng (msg = "O da duoc dat boi <SVxx>").
+      pushLog(db.bookings, { slot: d.slot, user: d.user, action: "reserve", ok: false, requestId: d.requestId, msg: d.msg || "", ts: now() });
     } else if (st === "FREE" || st === "EXPIRED" || st === "ENTERED") {
       pushLog(db.bookings, { slot: d.slot, user: d.user, action: st.toLowerCase(), ok: !!d.ok, requestId: d.requestId, ts: now() });
     }

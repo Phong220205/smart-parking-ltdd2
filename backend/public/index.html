@@ -234,7 +234,7 @@ async function loadHistory(){
       : '<tr><td colspan="5" style="color:#999">Chưa có hóa đơn</td></tr>';
     const bk=await (await fetch(base+'/api/bookings?limit=100')).json();
     $('tblBookings').querySelector('tbody').innerHTML = bk.length? bk.map(x=>
-      `<tr><td>${x.slot||''}</td><td>${x.user||''}</td><td>${x.action||''}</td>
+      `<tr><td>${x.slot||''}</td><td>${x.user||''}</td><td>${x.action||''}${x.msg?' <small style="color:#c0392b">('+x.msg+')</small>':''}</td>
        <td><span class="tag ${x.ok?'t-ok':'t-no'}">${x.ok?'OK':'LOI'}</span></td><td>${fmtTime(x.ts)}</td></tr>`).join('')
       : '<tr><td colspan="5" style="color:#999">Chưa có lịch sử</td></tr>';
     const rf=await (await fetch(base+'/api/rfid')).json();

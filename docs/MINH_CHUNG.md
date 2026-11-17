@@ -44,11 +44,36 @@
 13e. **Ảnh App mở tab Cài đặt** – chỉ 1 ô "Link server" đã điền
    `https://smart-parking-ltdd2.onrender.com`, chế độ "Qua Backend", URL MQTT tự sinh.
 
-### Nhóm 3c – Ảnh minh chứng đã chụp sẵn (docs/anh/)
-- `docs/anh/dashboard-local-sodobai.png` – Dashboard tab Sơ đồ bãi (chạy local).
-- `docs/anh/dashboard-cloud-thongke.png` – Dashboard tab Thống kê trên **server cloud thật**.
+### Nhóm 3c – Ảnh minh chứng đã chụp (docs/anh/ — 15 ảnh)
 
-### Nhóm 4 – Ứng dụng di động (Lab3)
+**Lab 1 – Phần cứng & Firmware (Wokwi)**
+| # | File | Nội dung |
+|---|---|---|
+| 1 | `wokwi-toancanh.png` | Wokwi toàn cảnh: ESP32, OLED, 6 nút P1–P6, RFID RC522, Servo, Buzzer |
+| 2 | `wokwi-serial2.png` | Serial Monitor lúc boot: `[OLED] OK`, `[RFID] RC522 khoi dong OK`, `[WiFi] IP=`, `[MQTT] OK -> smart-parking-ltdd2.onrender.com`, `[NTP] Dong bo thanh cong` |
+| 3 | `wokwi-oled.png` | **OLED cận cảnh (phóng 4×)**: `SMART PARKING M` · `Trong: 5/6 OPEN` · `P1-6: _X_R__` · `RFID:A1B2C3` · `21:42:52 MQTT:OK` |
+| 4 | `wokwi-rfid.png` | Quét thẻ RFID: `[RFID] A1B2C3` → `[MSG] THE A1B2C3 -> P2`, barrier mở (servo xoay), còi báo sáng |
+| 5 | `wokwi-chongtrung.png` | Serial lệnh demo + **chống đặt trùng**: `[MSG] DAT P3 OK` → `[MSG] O DA DUOC DAT BOI SV01` |
+
+**Lab 2 – Broker**
+| # | File | Nội dung |
+|---|---|---|
+| 6 | `mqtt-explorer-topics.png` | MQTT Explorer subscribe `parking/#` → **16 topic retain**, gồm `parking/slots/snapshot`, `parking/slot/P1..P6/status`, `parking/booking/+/state`, `parking/gate/barrier/state`, `parking/system/status`. Topic P3 tô đỏ: `ok:false, msg:"O da duoc dat boi SV02"` |
+
+**Server & Dashboard (server cloud thật)**
+| # | File | Nội dung |
+|---|---|---|
+| 7 | `cloud-dia-chi-trinh-duyet.png` | Thanh địa chỉ `https://smart-parking-ltdd2.onrender.com` + Dashboard 5 tab + banner "● Broker ONLINE" |
+| 8 | `cloud-sodobai.png` | Dashboard tab **Sơ đồ bãi**: lưới 6 ô màu, log hệ thống realtime |
+| 9 | `cloud-thongke.png` | Dashboard tab **Thống kê**: 4 KPI + 3 biểu đồ Chart.js (cột 7 ngày, đường theo giờ, tròn top user) |
+| 10 | `cloud-lichsu.png` | Dashboard tab **Lịch sử**: 3 bảng — hóa đơn tính phí · lịch sử đặt chỗ · log thẻ RFID |
+| 11 | `cloud-nguoidung.png` | Dashboard tab **Người dùng**: đăng ký SV03 → "Đăng ký thành công" + bảng user (lượt xe, chi tiêu) |
+| 12 | `cloud-caidat.png` | Dashboard tab **Cài đặt**: Link server + danh sách endpoint REST/SSE |
+| 13 | `terminal-api-cloud.png` | Terminal: `curl /api/health` → `{"ok":true,"mqtt":true,"online":true,"slots":6}` · `curl /api/bridge` → `{"path":"/mqtt","embedded":{"clients":2,"subscriptions":10}}` · `node test_bridge.js` → `=== KET QUA: BRIDGE HOAT DONG (2 chieu) ===` |
+| 14 | `dashboard-local-sodobai.png` | Dashboard tab Sơ đồ bãi (chạy local) |
+| 15 | `dashboard-cloud-thongke.png` | Dashboard tab Thống kê (bản cũ, chạy cloud) |
+
+### Nhóm 4 – Ứng dụng di động (Lab3) — **cần chụp trên điện thoại**
 14. **Ảnh App Expo Go – tab Bãi** – lưới 6 ô màu + banner ONLINE + barrier.
 15. **Ảnh App – đặt chỗ** – popup kết quả "✅ Thành công / Dat o thanh cong, giu cho 5 phut".
 16. **Ảnh App – tab Lịch sử** – danh sách hóa đơn có số tiền (VD `6.000đ`).
@@ -56,10 +81,10 @@
 18. **Ảnh App – tab Tài khoản** – form đăng nhập / thông tin user.
 
 ### Nhóm 5 – Chứng minh tính năng nâng cấp
-19. **Ảnh chống trùng** – log broker/App: `{"ok":false,"msg":"O da duoc dat boi SV01"}`.
-20. **Ảnh tính phí** – hóa đơn `{"slot":"P6","user":"SV07","minutes":95,"fee":6000}`.
+19. **Ảnh chống trùng** – ✅ `wokwi-chongtrung.png` + `mqtt-explorer-topics.png` (`ok:false, msg:"O da duoc dat boi SV01"`).
+20. **Ảnh tính phí** – hóa đơn `{"slot":"P6","user":"SV07","minutes":95,"fee":6000}` → xem `cloud-lichsu.png`.
 21. **Ảnh xác thực** – `POST /api/auth/login` sai mật khẩu → `401 Unauthorized`.
-22. **Ảnh bảng thống kê 7 ngày** – `Doanh thu hom nay: 6000 | Tong: 6000 | Luot xe: 5`.
+22. **Ảnh bảng thống kê 7 ngày** – ✅ `cloud-thongke.png` (4 KPI + biểu đồ cột 7 ngày).
 
 ---
 
