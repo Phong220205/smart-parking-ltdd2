@@ -84,7 +84,7 @@ jobs:
             eclipse-mosquitto:2.0 mosquitto_passwd -b /work/passwd app app123
           echo "--- passwd ---" && cat broker/config/passwd
 
-      - name: Bat broker Mosquitto (4 listener: 1883/9001/8883 TLS/9002 WSS)
+      - name: "Bat broker Mosquitto (4 listener: 1883/9001/8883 TLS/9002 WSS)"
         run: |
           chmod 644 broker/config/passwd broker/config/acl.conf || true
           docker run -d --name parking-mosquitto-ci \
