@@ -20,6 +20,7 @@ import {
 } from '../parkingMqtt';
 import * as API from '../api';
 import { BOOKING_TIMEOUT_MS } from '../constants';
+import { formatNumber } from '../utils';
 
 export function useParking() {
   const [cfg, setCfg] = useState({ ...DEFAULT_CFG });
@@ -99,7 +100,7 @@ export function useParking() {
         }
         if (d.state === 'EXPIRED') pushLog(`⏰ ${d.slot}: ${d.msg}`);
       } else if (type === 'receipt') {
-        Alert.alert('🧾 Thanh toán', `Ô ${d.slot}: ${d.minutes} phút - ${new Intl.NumberFormat('vi-VN').format(d.fee || 0)}đ`);
+        Alert.alert('🧾 Thanh toán', `Ô ${d.slot}: ${d.minutes} phút - ${formatNumber(d.fee || 0)}đ`);
         pushLog(`Thu ${d.fee}đ ô ${d.slot}`);
         refreshRemote();
       } else if (type === 'rfid') {

@@ -6,7 +6,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, TouchableOpacity, TextInput, Alert,
-  ScrollView, ActivityIndicator,
+  ScrollView, ActivityIndicator, StyleSheet,
 } from 'react-native';
 import { SLOT_IDS, FEE_PER_HOUR, FREE_MINUTES, TABS } from '../constants';
 import { money, fmtTime, slotColor, slotLabel } from '../utils';

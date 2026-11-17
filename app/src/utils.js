@@ -4,11 +4,41 @@
 
 import { SLOT_COLORS } from './constants';
 
+/**
+ * Định dạng số theo kiểu Việt Nam (dấu chấm phân tách nghìn).
+ * Hermes (RN 0.88) co Intl.NumberFormat, nhung fallback thu cong de app
+ * khong bao gio crash neu moi truong khong co Intl.
+ */
+export function formatNumber(n) {
+  const v = Number(n || 0);
+  if (!isFinite(v)) return '0';
+  try {
+    if (typeof Intl !== 'undefined' && Intl.NumberFormat) {
+      return new Intl.NumberFormat('vi-VN').format(v);
+    }
+  } catch { /* Intl khong hoat dong -> dung fallback ben duoi */ }
+  return String(v).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
 /** Định dạng số tiền kiểu Việt Nam: 6000 -> "6.000đ" */
-export const money = (n) => new Intl.NumberFormat('vi-VN').format(n || 0) + 'đ';
+export const money = (n) => formatNumber(n) + 'đ';
 
 /** Định dạng mốc thời gian */
-export const fmtTime = (ts) => (ts ? new Date(ts).toLocaleString('vi-VN') : '-');
+export const fmtTime = (ts) => {
+  if (!ts) return '-';
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return '-';
+  try {
+    if (typeof Intl !== 'undefined' && Intl.DateTimeFormat) {
+      return new Intl.DateTimeFormat('vi-VN', {
+        day: '2-digit', month: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit',
+      }).format(d);
+    }
+  } catch { /* fallback ben duoi */ }
+  const p = (x) => String(x).padStart(2, '0');
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
 
 /** Màu nền của ô đỗ theo trạng thái + người đang xem */
 export const slotColor = (s, mine) => {
