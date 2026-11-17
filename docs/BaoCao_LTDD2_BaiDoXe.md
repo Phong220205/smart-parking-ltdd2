@@ -397,6 +397,9 @@ trên cloud bị đứt** — tức là tính năng quan trọng nhất của đ
 | 13 | Backend nối nhầm broker | Broker log `EADDRINUSE` rồi bỏ qua; backend/simulator nối sang broker khác đang chiếm 1883 → mất trạng thái, test không nhận message nào | Không có cơ chế chuyển cổng; backend nối MQTT trước khi biết cổng thật | Broker tự dò cổng trống (1883→1884…), backend dùng `manualConnect` chờ cổng thật rồi nối **đúng 1 lần**, `/api/health` trả `brokerPort`, bộ test đọc cổng đó |
 | 14 | Simulator không nối được cloud | `--ws wss://...onrender.com/mqtt` → *"WebSocket handshake error, connection not upgraded"* | Nhánh `--ws` chỉ bật TLS khi có cờ `--tls`; URL `wss://` không có cờ đó thì client không bật TLS | Tự bật TLS khi scheme là `wss://` |
 | 15 | Log trùng lặp | Mỗi sự kiện broker in ra 2 lần | `tcpServer.listen()` với callback bị đăng ký lại mỗi lần thử lại cổng | Chuyển sang dùng sự kiện `"listening"` + **một** listener `"error"` duy nhất |
+| 16 | **CI không chạy được** | 3 lần push liên tiếp báo CI failure sau **0 giây**, không job nào chạy | Tên step trong YAML chứa dấu `:` chưa bọc nháy → GitHub không parse được workflow | Bọc nháy tên step → workflow chạy bình thường |
+| 17 | CI đọc file `passwd` bị từ chối | `cat: broker/config/passwd: Permission denied` | `mosquitto_passwd` tạo file quyền **600** (owner root trong container) | `sudo chmod 644` trước khi đọc và trước khi broker nạp file |
+| 18 | CI test nhầm broker | Checkpoint kiểm thử TLS bị **bỏ qua** | Mặc định `EMBED_BROKER=true` → backend tự nhúng broker aedes, không phải Mosquitto có TLS | Đặt `EMBED_BROKER=false` + `MQTT_URL=mqtt://localhost:1883` trong CI |
 
 **Kết quả kiểm chứng sau khi sửa:**
 
@@ -406,11 +409,17 @@ trên cloud bị đứt** — tức là tính năng quan trọng nhất của đ
 | Bộ test local (cổng 1883 **bị chiếm** → broker chuyển 1884) | ✅ **39/39 PASS** |
 | Bridge 2 chiều trên **server cloud** | ✅ `=== KET QUA: BRIDGE HOAT DONG (2 chieu) ===` |
 | Simulator nối cloud qua `wss://` | ✅ cloud báo `online:true` |
+| **CI GitHub Actions** | ✅ **xanh**: 39/39 PASS + TLS **5/5 PASS** + app syntax OK |
 
-> **Bài học rút ra:** khi một thành phần chuyển từ "chạy trong môi trường lý tưởng"
-> sang "chạy trên máy thật", phải kiểm tra lại **mọi** client kết nối, không chỉ
-> phần đã test. Ba lỗi đầu đều là lỗi "chạy được ở môi trường lý tưởng nhưng
-> hỏng khi có thành phần khác chiếm cổng / bật xác thực".
+> **Bài học rút ra (quan trọng):** badge CI "PASS" trong README chỉ có giá trị nếu
+> workflow **thực sự chạy**. Trong 3 lần push trước, CI báo failure sau 0 giây vì
+> YAML lỗi — tức là **chưa từng có checkpoint nào được thực thi**. Việc kiểm tra
+> lại workflow (đọc log thật thay vì tin badge) là bắt buộc, đặc biệt khi
+> nhóm nộp bài và GV sẽ mở link CI để đối chiếu.
+> Ngoài ra: khi một thành phần chuyển từ "chạy trong môi trường lý tưởng" sang
+> "chạy trên máy thật", phải kiểm tra lại **mọi** client kết nối, không chỉ phần
+> đã test. Ba lỗi đầu đều là lỗi "chạy được ở môi trường lý tưởng nhưng hỏng
+> khi có thành phần khác chiếm cổng / bật xác thực".
 
 ## 10. Kết quả & Hạn chế
 

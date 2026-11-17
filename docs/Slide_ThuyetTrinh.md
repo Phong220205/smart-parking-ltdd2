@@ -141,10 +141,12 @@ ESP32 (thật/Wokwi)  ──MQTT 1883──▶  Mosquitto Broker  ──WS 9001�
 | **Broker TLS** | **MQTT/TLS 8883 + WSS 9002 + client không tin CA bị từ chối** | ✅ |
 | Dashboard | HTML · 5 tab · Chart.js · **SSE realtime** | ✅ |
 
-- **CI GitHub Actions**: mỗi lần push tự chạy lại 39 checkpoint + kiểm tra syntax firmware/backend/app (7 file JSX).
-  *Kết quả thực tế trên GitHub: `KET QUA: 39/39 PASS` + `7/7 file syntax OK`.*
+- **CI GitHub Actions**: mỗi lần push tự chạy lại 39 checkpoint + kiểm tra syntax firmware/backend/app (5 file JS backend, 3 file Python simulator, 7 file JSX).
+  *Kết quả thực tế trên GitHub: `KET QUA: 39/39 PASS` + `KET QUA TLS: 5/5 PASS` + app syntax OK.*
 - **9 bug đã tìm & sửa**: OLED trắng xanh · lệnh ENTER bị IR ghi đè · nhiễu bounce nút bấm · token JWT sai · barrier không lưu `db.gate` · test SSE đọc theo byte bị treo · test 404 mất mã HTTP · bridge sai thứ tự route · chứng thư thiếu AuthorityKeyIdentifier.
 - **4 bug đã tìm & sửa (đợt 17/11/2026)**: bridge thiếu user/password → "Bad username or password" (FAIL cả trên cloud) · backend nối nhầm broker khi cổng 1883 bị chiếm · simulator không bật TLS khi nối `wss://` cloud · log trùng do đăng ký listener lặp.
+- **3 lỗi CI**: workflow YAML không parse (dấu `:` trong tên step) → **chưa từng chạy checkpoint nào** · file `passwd` quyền 600 → Permission denied · backend dùng nhầm broker nội bộ → bỏ qua test TLS.
+  → **CI hiện xanh thật: 39/39 PASS + TLS 5/5 PASS.**
 - *Gợi ý hình: bảng kết quả test + ảnh OLED đang hiển thị.*
 
 ### Slide 12 – Kết luận & hướng phát triển

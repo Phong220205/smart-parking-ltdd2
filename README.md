@@ -247,7 +247,8 @@ KET QUA: 39/39 PASS
 
 **CI tự động trên GitHub Actions** (`.github/workflows/ci.yml`): mỗi lần push sẽ
 tự sinh chứng thư TLS, dựng Mosquitto (4 listener) + Backend, chạy đủ 39 checkpoint
-+ `test_tls.py`, đồng thời kiểm tra syntax firmware, backend và **7 file JSX** của App.
++ `test_tls.py` (5/5), đồng thời kiểm tra syntax firmware, **5 file backend**,
+**3 file Python simulator** và **7 file JSX** của App.
 
 ### Bảo mật & vận hành
 - **Xác thực**: token ký HMAC-SHA256, header `Authorization: Bearer <token>`, hạn 7 ngày.
@@ -266,11 +267,15 @@ python simulator/test_suite.py
 ```
 
 Repo có sẵn **GitHub Actions** (`.github/workflows/ci.yml`) tự động:
-1. Kiểm tra syntax firmware, backend, JSX của app.
-2. Dựng Mosquitto + Backend → chạy `test_suite.py` → 39/39 PASS.
+1. Kiểm tra syntax firmware, 5 file backend, 3 file Python simulator, 7 file JSX của app.
+2. Dựng Mosquitto + Backend (`EMBED_BROKER=false` để dùng đúng broker có TLS)
+   → chạy `test_suite.py` → **39/39 PASS** → chạy `test_tls.py` → **5/5 PASS**.
 3. Đóng gói log backend làm artifact.
 
 Mỗi lần `git push` lên `master` → CI tự chạy, có huy hiệu xanh trên trang repo.
+> *Lưu ý (17/11/2026): trước đây workflow có lỗi YAML khiến CI báo failure sau 0 giây
+> mà **không chạy checkpoint nào** — badge "PASS" là không trung thực. Đã sửa và kiểm
+> chứng lại bằng log thật: **39/39 PASS + TLS 5/5 PASS**.*
 
 ## 5. Giả lập thay phần cứng (để nộp Lab1)
 

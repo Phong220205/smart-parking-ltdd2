@@ -46,7 +46,7 @@ https://smart-parking-ltdd2.onrender.com
 | **Firmware V2 trên Wokwi** | ✅ build OK, OLED hiển thị 6 dòng (đọc pixel canvas xác nhận), MQTT OK, tự reconnect |
 | **App React Native** | ✅ bundle Android thành công (552 modules, 2.17 MB) |
 | **Bộ test tự động E2E** | ✅ `simulator/test_suite.py` — **39/39 PASS** |
-| **CI GitHub Actions** | ✅ `.github/workflows/ci.yml` — 2 job (test E2E + app syntax) |
+| **CI GitHub Actions** | ✅ `.github/workflows/ci.yml` — 2 job (test E2E + app syntax) — **đã sửa lỗi YAML, đang xanh** |
 | **MQTT-WS Bridge (2 chiều)** | ✅ `wss://smart-parking-ltdd2.onrender.com/mqtt` — App → Broker → App, đúng `requestId` |
 | **Server cloud thật** | ✅ Render free: https://smart-parking-ltdd2.onrender.com — REST + SSE + Dashboard + bridge đều OK |
 
@@ -57,7 +57,8 @@ Chi tiết đầy đủ + **8 bug đã tìm & sửa**: xem `docs/KET_QUA_TEST.md
 python simulator/test_suite.py
 ```
 → in ra `KET QUA: 39/39 PASS`. Bộ test tự bật/tắt simulator nên không cần chuẩn bị gì.
-**CI tự động**: `.github/workflows/ci.yml` — mỗi lần push GitHub sẽ tự chạy lại đủ 39 checkpoint.
+**CI tự động**: `.github/workflows/ci.yml` — mỗi lần push GitHub sẽ tự chạy lại đủ 39 checkpoint
++ kiểm thử TLS 5/5. *(Đã sửa lỗi YAML khiến workflow không parse — xem mục "Sửa lỗi" bên dưới.)*
 
 ---
 
@@ -100,7 +101,11 @@ App → Broker → Server trên cloud** — tính năng quan trọng nhất củ
 | 13 | Backend nối nhầm broker khi cổng 1883 bị chiếm → mất trạng thái | Broker tự dò cổng trống (1883→1884…), backend chờ cổng thật rồi nối, `/api/health` trả `brokerPort` |
 | 14 | Simulator không bật TLS với `wss://` → *"WebSocket handshake error"* | Tự bật TLS khi scheme là `wss://` |
 | 15 | Log broker in trùng lặp | Một listener `"error"` duy nhất + sự kiện `"listening"` |
+| 16 | **CI workflow không parse được YAML** (3 lần push đều fail sau 0 giây) | Bọc nháy tên step chứa dấu `:` |
+| 17 | CI: `Permission denied` khi đọc file `passwd` | `sudo chmod 644` trước khi đọc |
+| 18 | CI: backend dùng nhầm broker nội bộ thay vì Mosquitto có TLS | Đặt `EMBED_BROKER=false` + `MQTT_URL` trong CI |
 
 **Kiểm chứng**: 39/39 PASS (cổng 1883 trống) · 39/39 PASS (1883 bị chiếm) ·
-bridge 2 chiều PASS trên cloud · simulator nối cloud → `online:true`.
-Chi tiết: `docs/KET_QUA_TEST.md` mục 10.
+bridge 2 chiều PASS trên cloud · simulator nối cloud → `online:true` ·
+**CI GitHub Actions xanh**: 39/39 PASS + TLS 5/5 PASS.
+Chi tiết: `docs/KET_QUA_TEST.md` mục 10 & 13.

@@ -376,16 +376,32 @@ Hướng dẫn đầy đủ: `backend/DEPLOY.md`.
 
 File `.github/workflows/ci.yml`:
 - Job `test`: dựng Mosquitto service → `npm ci` → kiểm tra syntax firmware (`.ino`) →
-  `node --check server.js` → bật Backend → chạy đủ **39 checkpoint** → upload log backend khi lỗi.
+  `node --check` cho 5 file backend → `py_compile` cho 3 file simulator →
+  bật Backend (`EMBED_BROKER=false` để dùng đúng Mosquitto có TLS) →
+  chạy đủ **39 checkpoint** → chạy `test_tls.py` (5/5) → upload log backend khi lỗi.
 - Job `build-app`: `npm ci` trong `app/` → parse JSX bằng `@babel/parser` cho `App.js`, `api.js`, `parkingMqtt.js`.
 
 Chạy tự động mỗi lần push lên `master` → badge CI trong README là bằng chứng code chất lượng.
 
-**Kết quả CI trên GitHub Actions (16/11/2026):**
+### 13.1 Hai lỗi CI đã tìm & sửa (17/11/2026)
+
+Trước đó **3 lần push liên tiếp đều báo CI failure**, nhưng thực ra workflow
+**chưa từng chạy được** — vẫn để badge "PASS" trong README là không trung thực.
+
+| Lỗi | Hiện tượng | Nguyên nhân | Sửa |
+|---|---|---|---|
+| YAML không parse được | Run fail sau **0 giây**, không có job nào chạy | Tên step chứa dấu `:` không được bọc nháy: `Bat broker Mosquitto (4 listener: 1883/...)` → YAML hiểu là mapping | Bọc nháy tên step → workflow parse OK |
+| `Permission denied` khi đọc `passwd` | Step tạo passwd fail | `mosquitto_passwd` tạo file quyền **600** (owner root trong container) → user runner không đọc được | `sudo chmod 644` **trước** khi `cat` và trước khi broker đọc file |
+| Backend dùng nhầm broker | Test TLS không kiểm được đúng broker | Mặc định `EMBED_BROKER=true` → backend tự nhúng broker aedes, không phải Mosquitto có TLS | Đặt `EMBED_BROKER=false` + `MQTT_URL=mqtt://localhost:1883` trong CI |
+
+**Kết quả CI trên GitHub Actions (17/11/2026, sau khi sửa):**
 ```
 ✅ Kiem thu end-to-end (39 checkpoint)  ->  KET QUA: 39/39 PASS
-✅ Bundle React Native (Android)        ->  3/3 file syntax OK
+✅ Kiem thu TLS rieng                   ->  KET QUA TLS: 5/5 PASS
+✅ Bundle React Native (Android)        ->  syntax OK
 ```
+> Lưu ý: trước khi sửa, checkpoint *"Broker TLS: MQTT/TLS 8883 + WSS 9002"* bị **bỏ qua
+> (skip)** vì broker TLS không chạy. Sau khi sửa, nó chạy thật và PASS.
 
 ## 14. Tình trạng cuối cùng (cập nhật 17/11/2026)
 
