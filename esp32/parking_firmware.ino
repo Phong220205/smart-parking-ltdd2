@@ -96,7 +96,18 @@ public:
     }
     return size;
   }
-  int available() override { pump(); maybePing(); return _rxLen - _rxPos; }
+  int available() override {
+    // [FIX - NGUYÊN NHÂN GỐC] available() gốc của NetworkClientSecure gọi
+    //   mbedtls_ssl_read(NULL,0) => CÓ THỂ BLOCK tới SO_RCVTIMEO (mặc định 30s).
+    //   Vì vậy mỗi vòng loop() bị treo tới 30 giây -> không kịp gửi PINGREQ
+    //   -> broker aedes ngắt kết nối với lỗi "keep alive timeout".
+    //   Cách sửa: chỉ dùng peek() (không chặn) để lấy dữ liệu đã có sẵn.
+    //   -> loop() chạy mượt, PINGREQ luôn đúng hạn, kết nối ổn định.
+    _lastAvailCall = millis();
+    pumpNonBlocking();
+    maybePing();
+    return _rxLen - _rxPos;
+  }
   int read() override {
     if (available() <= 0) return -1;
     return _rx[_rxPos++];
@@ -115,6 +126,17 @@ public:
   uint8_t connected() override { return (_wsReady && _tls.connected()) ? 1 : 0; }
   operator bool() override { return connected() != 0; }
 
+  // ---- PINGREQ MQTT tự quản lý --------------------------------------------
+  // Gói PINGREQ của MQTT chỉ gồm 2 byte: 0xC0 0x00 (Fixed Header + Remaining Length).
+  // Ta gửi trực tiếp (không qua PubSubClient) để CHẮC CHẮN broker luôn thấy
+  // traffic trong khoảng thời gian keepalive. Nếu không có gói này, broker aedes
+  // sẽ ngắt kết nối với thông báo "keep alive timeout".
+  bool sendMqttPing() {
+    if (!_wsReady) return false;
+    uint8_t p[2] = { 0xC0, 0x00 };
+    return sendFrame(0x2, p, 2);
+  }
+
 private:
   WiFiClientSecure &_tls;
   const char *_host; uint16_t _port; const char *_path;
@@ -122,6 +144,8 @@ private:
   uint8_t _rx[4096]; int _rxLen; int _rxPos;   // dữ liệu MQTT đã giải mã
   uint8_t _raw[8192]; int _rawLen;              // dữ liệu thô (frame WebSocket)
   unsigned long _lastPing;                      // lần gửi PING WebSocket gần nhất
+  unsigned long _lastAvailCall = 0;             // thời điểm gọi available() gần nhất
+  unsigned long _lastReadTick = 0;              // thời điểm đọc byte thô gần nhất
 
   // [N7] Gửi PING của WebSocket (opcode 0x9) mỗi WS_PING_MS giây.
   //      LÝ DO BẮT BUỘC: các CDN/load-balancer (Render đứng sau Cloudflare)
@@ -168,16 +192,26 @@ private:
     const unsigned long TLS_DEADLINE = millis() + 12000UL;   // hạn chót bắt tay TLS
     const unsigned long HDR_DEADLINE = millis() + 20000UL;   // hạn chót đọc header
 
-    _tls.setTimeout(3000);
+    // [FIX - NGUYÊN NHÂN GỐC] Timeout của socket TLS.
+    //   - Dùng connect(host, port, timeout) để đặt hạn chót cho bước BẮT TAY TLS
+    //     (Cloudflare có thể mất vài giây).
+    //   - Sau khi bắt tay xong, setConnectionTimeout(50) để các lệnh đọc
+    //     (available/read) chỉ chặn TỐI ĐA 50ms thay vì 30 giây mặc định.
+    //   - VÌ SAO quan trọng: available() của NetworkClientSecure gọi
+    //     mbedtls_ssl_read(NULL,0) => BLOCK tới SO_RCVTIMEO. Mặc định 30s!
+    //     Mỗi vòng loop() bị treo 30s -> không kịp gửi PINGREQ -> broker aedes
+    //     ngắt kết nối với lỗi "keep alive timeout".
+    //     (Lưu ý: setTimeout() là của lớp Stream nên KHÔNG có tác dụng này.)
     bool tlsOk = false;
     while (millis() < TLS_DEADLINE && !tlsOk) {
-      tlsOk = _tls.connect(_host, _port);
+      tlsOk = _tls.connect(_host, _port, 12000);   // hạn chót bắt tay TLS: 12 giây
       wdtKick();                 // giữ Watchdog "sống" trong lúc chờ mạng
       if (!tlsOk) delay(50);
     }
     if (!tlsOk) { Serial.println("[WS] TLS connect that bai"); return 0; }
     Serial.println("[WS] TLS da ket noi (bao mat bang SSL/TLS)");
-    _tls.setTimeout(5000);
+    // Từ đây trở đi mọi lệnh đọc chỉ chặn tối đa 50ms -> loop() chạy mượt
+    _tls.setConnectionTimeout(50);
 
     String req;
     req.reserve(320);
@@ -187,6 +221,13 @@ private:
     req += "Connection: Upgrade\r\n";
     req += "Sec-WebSocket-Key: "; req += makeKey(); req += "\r\n";
     req += "Sec-WebSocket-Version: 13\r\n";
+    // [FIX] KHÔNG mời permessage-deflate.
+    //   Lý do: nếu Cloudflare/Render đồng ý nén (trả lại
+    //   "Sec-WebSocket-Extensions: permessage-deflate"), thì mọi frame ta gửi
+    //   đi PHẢI được nén theo RFC 7692, nếu không server sẽ báo lỗi
+    //   "RSV1 set / bad opcode" và đóng kết nối ngay lập tức.
+    //   Vì firmware không cài thư viện nén (tốn RAM), ta cố tình KHÔNG mời
+    //   nén -> server dùng frame thô -> luôn tương thích.
     // MQTT-over-WebSocket: phải MỜI subprotocol "mqtt" (broker trả lại đúng
     // tên này trong header phản hồi 101, nếu không mời -> server từ chối).
     req += "Sec-WebSocket-Protocol: mqtt\r\n";
@@ -273,10 +314,33 @@ private:
 
   // Đọc byte thô từ TLS vào bộ đệm _raw
   void pump() {
+    // [FIX] wdtKick() trong vòng đọc: nếu dữ liệu về liên tục (nhiều frame
+    //       MQTT liên tiếp) thì vòng while ở dưới có thể chạy hơn 30 giây ->
+    //       Watchdog sẽ reset ESP32. Kick định kỳ để firmware luôn sống.
+    unsigned long lastKick = 0;
     while (_tls.available() && _rawLen < (int)sizeof(_raw)) {
       int c = _tls.read();
       if (c < 0) break;
       _raw[_rawLen++] = (uint8_t)c;
+      if (millis() - lastKick > 1000) { lastKick = millis(); wdtKick(); }
+    }
+    parseFrames();
+  }
+
+  // Đọc KHÔNG chặn: chỉ lấy dữ liệu đã sẵn có trong bộ đệm của ESP32.
+  // Dùng cho available() để bảo đảm vòng loop() KHÔNG BAO GIỜ bị treo.
+  void pumpNonBlocking() {
+    // _tls.available() vẫn có thể chặn (tối đa _timeout = 50ms sau khi ta
+    // đặt setConnectionTimeout(50) -> chấp nhận được, vòng loop vẫn mượt).
+    // Nhưng để an toàn tuyệt đối, ta giới hạn số byte đọc mỗi lần gọi để
+    // không bao giờ chiếm quá nhiều thời gian trong một vòng loop.
+    int budget = 512;   // tối đa 512 byte mỗi lần -> loop() luôn kịp
+    while (budget-- > 0 && _rawLen < (int)sizeof(_raw)) {
+      if (_tls.available() <= 0) break;
+      int c = _tls.read();
+      if (c < 0) break;
+      _raw[_rawLen++] = (uint8_t)c;
+      if (millis() - _lastReadTick > 500) { _lastReadTick = millis(); wdtKick(); }
     }
     parseFrames();
   }
@@ -459,6 +523,7 @@ long revenueToday = 0;             // tổng doanh thu trong ngày
 unsigned long lastLcd = 0, lastMqttTry = 0, lastBeat = 0, lastSnapshot = 0, lastExpiry = 0;
 bool mqttOK = false;               // đang kết nối broker hay không
 bool mqttWasOK = false;            // lần trước đó kết nối có thành công không (để log thời điểm rớt)
+unsigned long lastMqttPing = 0;    // thời điểm gửi PINGREQ MQTT tự quản lý gần nhất
 bool oledOK = false;               // OLED khởi tạo thành công hay không
 String lastRfidCard = "";          // thẻ RFID quét gần nhất
 String statusMsg = "SAN SANG";     // dòng thông báo ngắn trên OLED
@@ -1216,6 +1281,18 @@ void loop() {
     mqttOK = true;
     mqttWasOK = true;
     mqtt.loop();
+
+    // [FIX] Gửi PINGREQ MQTT tự quản lý mỗi 8 giây.
+    //   Lý do: broker aedes ngắt client nếu im lặng quá keepalive*1.5 giây.
+    //   Ta tự gửi (không phụ thuộc PubSubClient) để đảm bảo luôn có traffic,
+    //   đồng thời traffic này cũng giữ cho kết nối WebSocket qua Cloudflare
+    //   không bị đóng do nhàn rỗi (idle timeout).
+#if MQTT_USE_WS
+    if (millis() - lastMqttPing > 8000) {
+      lastMqttPing = millis();
+      wsClient.sendMqttPing();
+    }
+#endif
   }
 
   // --- Đọc cảm biến IR 6 ô (có lọc nhiễu debounce) ---
