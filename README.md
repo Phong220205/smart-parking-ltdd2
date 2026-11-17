@@ -168,6 +168,23 @@ node backend/test_bridge.js wss://smart-parking-ltdd2.onrender.com/mqtt
 # → === KET QUA: BRIDGE HOAT DONG (2 chieu) ===
 ```
 
+### 4.1.1 Broker nội bộ (aedes) — xác thực, phân quyền và tự dò cổng
+
+Khi `EMBED_BROKER=true` (mặc định), backend **nhúng** broker MQTT `aedes`
+(`backend/mqttAuthBroker.js`) và expose nó qua `/mqtt`. Ở chế độ này:
+
+| Đặc điểm | Chi tiết |
+|---|---|
+| **Bắt buộc xác thực** | Client phải gửi user/pass, nếu không broker trả `CONNACK 4 – Bad username or password` |
+| Tài khoản | `esp32 / esp32123` (thiết bị, đọc+ghi `parking/#`) · `app / app123` (App: chỉ đọc + gửi lệnh) |
+| **ACL theo topic** | App **không** publish được trạng thái ô → không thể giả mạo cảm biến |
+| **Tự dò cổng trống** | Nếu cổng **1883 đã bị chiếm** (Mosquitto Docker, project khác…) broker chuyển sang cổng trống tiếp theo (1884, 1885…) |
+| Báo cổng thật | `GET /api/health` → `{ "brokerPort": 1884, "brokerHost": "127.0.0.1" }` |
+| Nhật ký xác thực | `GET /api/broker/auth-log` → ai đăng nhập, thành công/thất bại, topic bị ACL chặn |
+
+> **Lưu ý khi chạy local**: nếu báo `brokerPort` khác 1883, hãy trỏ simulator/App
+> vào cổng đó. Bộ test tự động (`simulator/test_suite.py`) đã tự đọc cổng này.
+
 ## 4.2 Cấu trúc App React Native (tách component/service)
 
 ```

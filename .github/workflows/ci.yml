@@ -55,6 +55,16 @@ jobs:
         run: |
           node --check server.js
           node --check mqttWsBridge.js
+          node --check mqttAuthBroker.js
+          node --check mqttWsAdapter.js
+          node --check test_bridge.js
+
+      - name: Kiem tra syntax simulator (Python)
+        run: |
+          python -m py_compile simulator/parking_simulator.py
+          python -m py_compile simulator/test_suite.py
+          python -m py_compile simulator/test_tls.py
+          echo "Simulator OK"
 
       - name: Kiem tra JSON + ACL broker
         run: |

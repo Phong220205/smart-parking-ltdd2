@@ -326,7 +326,7 @@ fee = ceil(minutes / 60) × 3000đ               nếu minutes > 30
 ### 8.3 Giữ chỗ 5 phút
 Đặt chỗ nhưng xe không vào → sau 5 phút hệ thống tự hủy, publish `EXPIRED`, giải phóng ô cho người khác.
 
-## 9. Kiểm thử tự động (đã chạy thật ngày 16/11/2026)
+## 9. Kiểm thử tự động (đã chạy thật ngày 16/11/2026, sửa lỗi ngày 17/11/2026)
 
 Môi trường: Docker Desktop 28.5.1, Mosquitto 2.0.22, Node v24.19.0, Python 3.13.9, Chrome.
 
@@ -383,6 +383,34 @@ tự động hoá — điểm cộng đáng kể khi GV đánh giá.
 | 14 | Firmware V2 trên Wokwi | ✅ | Build thành công, OLED hiển thị 6 dòng, MQTT OK |
 | 15 | OLED hiển thị thật | ✅ | **Đọc pixel canvas**: thấy rõ "Smart Parking / Trong:5/6 CLOSED / X_____ / MQTT:OK" |
 | 16 | Nút bấm Wokwi | ✅ | Giữ nút P1 → OLED đổi "Trong:5/6", Serial `Slots: X_____` |
+
+### 9.4 Đợt sửa lỗi 17/11/2026 — 4 lỗi nghiêm trọng phát hiện khi chạy lại toàn bộ hệ thống
+
+Khi chạy lại bộ test trên môi trường thật (máy đang chạy thêm một project Node
+khác chiếm cổng 1883), phát hiện 4 lỗi khiến **đường kết nối App → Broker → Server
+trên cloud bị đứt** — tức là tính năng quan trọng nhất của đồ án không chạy được.
+Đây là minh hoạ cho thấy tại sao cần kiểm thử tự động liên tục, không chỉ test 1 lần.
+
+| # | Lỗi | Hiện tượng | Nguyên nhân | Cách sửa |
+|---|---|---|---|---|
+| 12 | Bridge thiếu xác thực | `test_bridge.js` FAIL: *"Bad username or password"* (cả local lẫn cloud) | Khi broker nội bộ (aedes) bật xác thực, `/mqtt` trỏ thẳng vào broker → client bắt buộc phải gửi user/pass, nhưng script test không gửi | Script test gửi `app/app123` giống hệt App (override được bằng biến môi trường) |
+| 13 | Backend nối nhầm broker | Broker log `EADDRINUSE` rồi bỏ qua; backend/simulator nối sang broker khác đang chiếm 1883 → mất trạng thái, test không nhận message nào | Không có cơ chế chuyển cổng; backend nối MQTT trước khi biết cổng thật | Broker tự dò cổng trống (1883→1884…), backend dùng `manualConnect` chờ cổng thật rồi nối **đúng 1 lần**, `/api/health` trả `brokerPort`, bộ test đọc cổng đó |
+| 14 | Simulator không nối được cloud | `--ws wss://...onrender.com/mqtt` → *"WebSocket handshake error, connection not upgraded"* | Nhánh `--ws` chỉ bật TLS khi có cờ `--tls`; URL `wss://` không có cờ đó thì client không bật TLS | Tự bật TLS khi scheme là `wss://` |
+| 15 | Log trùng lặp | Mỗi sự kiện broker in ra 2 lần | `tcpServer.listen()` với callback bị đăng ký lại mỗi lần thử lại cổng | Chuyển sang dùng sự kiện `"listening"` + **một** listener `"error"` duy nhất |
+
+**Kết quả kiểm chứng sau khi sửa:**
+
+| Kịch bản | Kết quả |
+|---|---|
+| Bộ test local (cổng 1883 trống) | ✅ **39/39 PASS** |
+| Bộ test local (cổng 1883 **bị chiếm** → broker chuyển 1884) | ✅ **39/39 PASS** |
+| Bridge 2 chiều trên **server cloud** | ✅ `=== KET QUA: BRIDGE HOAT DONG (2 chieu) ===` |
+| Simulator nối cloud qua `wss://` | ✅ cloud báo `online:true` |
+
+> **Bài học rút ra:** khi một thành phần chuyển từ "chạy trong môi trường lý tưởng"
+> sang "chạy trên máy thật", phải kiểm tra lại **mọi** client kết nối, không chỉ
+> phần đã test. Ba lỗi đầu đều là lỗi "chạy được ở môi trường lý tưởng nhưng
+> hỏng khi có thành phần khác chiếm cổng / bật xác thực".
 
 ## 10. Kết quả & Hạn chế
 

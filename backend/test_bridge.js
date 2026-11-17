@@ -10,6 +10,19 @@ const TOPICS = [
   "parking/system/heartbeat", "parking/system/status",
 ];
 
+// ---------------------------------------------------------------------------
+// [FIX] Broker MQTT của đồ án CÓ xác thực user/password + ACL phân quyền
+// (backend/mqttAuthBroker.js - broker aedes nhúng trong backend).
+// Nếu client không gửi user/pass, broker trả về
+//   CONNACK 4 - "Bad username or password"
+// nên App React Native (app/src/parkingMqtt.js) luôn gửi kèm
+//   user = "app" / pass = "app123"  (quyền CHỈ ĐỌC + gửi lệnh booking/gate).
+// Test script này phải làm y hệt App, nếu không sẽ luôn FAIL.
+// Có thể override bằng biến môi trường MQTT_USER / MQTT_PASS.
+// ---------------------------------------------------------------------------
+const MQTT_USER = process.env.MQTT_USER || "app";
+const MQTT_PASS = process.env.MQTT_PASS || "app123";
+
 const got = [];
 const REQ = "bridge-test-" + Date.now();
 const SLOT = "P" + (1 + Math.floor(Math.random() * 6));
@@ -19,6 +32,9 @@ const client = mqtt.connect(URL, {
   reconnectPeriod: 0,
   protocolVersion: 4,
   ws: WebSocket,
+  // BẮT BUỘC: broker nội bộ yêu cầu xác thực (xem ghi chú ở trên).
+  username: MQTT_USER,
+  password: MQTT_PASS,
 });
 
 const timer = setTimeout(() => {

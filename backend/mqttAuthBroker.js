@@ -248,13 +248,50 @@ export function createAuthBroker({ tcpPort = 1883, wsPort = 9001, onLog = () => 
   });
 
   const tcpServer = createServer(aedes.handle);
-  tcpServer.listen(tcpPort, "0.0.0.0", () => {
-    onLog(`[BROKER] MQTT/TCP dang lang nghe tren cong ${tcpPort}`);
-  });
+  // ---------------------------------------------------------------------------
+  // [FIX] Cổng 1883 có thể đã bị chiếm bởi một broker khác trên máy (ví dụ
+  //   Mosquitto chạy bằng Docker, hay một project Node khác của người dùng).
+  //   Trước đây broker nội bộ chỉ log lỗi rồi bỏ qua -> backend kết nối nhầm
+  //   sang broker lạ (không đúng user/pass) và mọi thiết bị/simulator nối vào
+  //   đó cũng không khớp -> mất trạng thái, test bridge FAIL.
+  //   GIẢI PHÁP: nếu cổng yêu cầu bị chiếm, tự tìm một cổng trống gần đó
+  //   và báo lại cổng thực tế qua stats() để simulator/App cấu hình đúng.
+  // ---------------------------------------------------------------------------
+  let actualTcpPort = tcpPort;
+  let bound = false;
+  // Các callback đang chờ broker mở cổng xong (dùng bởi whenReady).
+  const readyCallbacks = [];
+
+  // Dùng MỘT listener "error" duy nhất để tránh đăng ký chồng lên nhau
+  // (đăng ký nhiều listener sẽ log trùng và xử lý sai).
   tcpServer.on("error", (e) => {
-    // Cổng đã bị chiếm (ví dụ máy đang chạy Docker Mosquitto) -> không chết
-    onLog(`[BROKER] Khong mo duoc cong TCP ${tcpPort}: ${e.message}`);
+    if (e.code !== "EADDRINUSE" || bound) {
+      onLog(`[BROKER] Loi cong TCP: ${e.message}`);
+      return;
+    }
+    const next = actualTcpPort + 1;
+    onLog(`[BROKER] Cong ${actualTcpPort} dang bi chiem -> thu cong ${next}`);
+    actualTcpPort = next;
+    tryListen(next);
   });
+
+  function tryListen(port) {
+    // Dùng sự kiện "listening" (không phải callback của listen) để tránh việc
+    // callback bị đăng ký lại mỗi lần thử lại -> log trùng "Dang lang nghe".
+    tcpServer.listen(port, "0.0.0.0");
+  }
+
+  tcpServer.on("listening", () => {
+    bound = true;
+    actualTcpPort = tcpServer.address()?.port || actualTcpPort;
+    onLog(`[BROKER] MQTT/TCP dang lang nghe tren cong ${actualTcpPort}`);
+    // Báo cho các promise đang chờ (whenReady).
+    while (readyCallbacks.length) {
+      try { readyCallbacks.shift()(actualTcpPort); } catch { /* bỏ qua */ }
+    }
+  });
+
+  tryListen(tcpPort);
 
   // MQTT-over-WebSocket: dùng chung 1 "engine" aedes, chỉ khác lớp vận chuyển.
   // WebSocketServer này được gắn vào HTTP server chính (qua handleUpgrade)
@@ -310,6 +347,23 @@ export function createAuthBroker({ tcpPort = 1883, wsPort = 9001, onLog = () => 
     tcpServer,
     wss,
     users: Object.keys(USERS),
+    /** Cổng TCP broker thực tế đang lắng nghe (có thể khác 1883 nếu bị chiếm) */
+    get tcpPort() { return actualTcpPort; },
+    /** Cổng TCP broker thực tế (số) - dùng để cấu hình simulator/App */
+    get port() { return actualTcpPort; },
+    /** Broker đã lắng nghe thành công hay chưa */
+    get ready() { return bound; },
+    /** Chờ broker sẵn sàng (resolve khi cổng đã mở) */
+    whenReady(timeoutMs = 5000) {
+      if (bound) return Promise.resolve(actualTcpPort);
+      return new Promise((resolve, reject) => {
+        const t = setTimeout(() => reject(new Error("Broker khong kip khoi dong")), timeoutMs);
+        readyCallbacks.push((port) => {
+          clearTimeout(t);
+          resolve(port);
+        });
+      });
+    },
     /** Gắn endpoint WebSocket MQTT trực tiếp vào HTTP server (path /mqtt) */
     handleUpgrade(server, path = "/mqtt") {
       server.on("upgrade", (req, socket, head) => {
@@ -327,7 +381,7 @@ export function createAuthBroker({ tcpPort = 1883, wsPort = 9001, onLog = () => 
         // (mỗi client giữ riêng), nên chỉ đếm số client đang kết nối.
         subscriptions: Object.values(aedes.clients || {})
           .reduce((n, c) => n + Object.keys(c?.subscriptions || {}).length, 0),
-        tcpPort,
+        tcpPort: actualTcpPort,
         wsPath: "/mqtt",
       };
     },

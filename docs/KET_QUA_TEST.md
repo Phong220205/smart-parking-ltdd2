@@ -290,6 +290,52 @@ python simulator/test_suite.py
   | Shared | `constants.js`, `utils.js` | hằng số + hàm thuần dùng chung |
 - **Kết quả**: `App.js` còn **78 dòng**; `checkSyntax.js` mở rộng kiểm tra **7 file**.
 
+### Bug 12 – Bridge 2 chiều FAIL vì thiếu user/password (đã sửa — NGHIÊM TRỌNG)
+- **Hiện tượng**: `node backend/test_bridge.js` FAIL với
+  `Connection refused: Bad username or password`, **cả trên server cloud**.
+  Đây là checkpoint quan trọng nhất của Lab2 + đường kết nối của App.
+- **Nguyên nhân**: Khi backend nhúng broker **aedes có xác thực** (`mqttAuthBroker.js`),
+  `/mqtt` không còn là proxy trung gian mà trỏ **thẳng** vào broker → mọi client
+  phải gửi user/pass. Nhưng `test_bridge.js` (và bản dùng để demo) **không gửi
+  credentials** → broker trả `CONNACK 4 - Bad username or password`.
+  App React Native vẫn chạy đúng vì `parkingMqtt.js` đã gửi `app/app123`.
+- **Sửa**: `test_bridge.js` gửi kèm `username: "app"` / `password: "app123"`
+  (đọc được override qua biến môi trường `MQTT_USER` / `MQTT_PASS`),
+  giống hệt App.
+- **Kiểm chứng**: local **39/39 PASS** + cloud
+  `=== KET QUA: BRIDGE HOAT DONG (2 chieu) ===`.
+
+### Bug 13 – Backend nối nhầm broker khi cổng 1883 đã bị chiếm (đã sửa)
+- **Hiện tượng**: broker nội bộ log `EADDRINUSE` rồi bỏ qua; backend vẫn nối
+  `127.0.0.1:1883` — nơi đang chạy **một broker khác** (Mosquitto Docker, hoặc
+  project Node khác của người dùng) → sai user/pass, mất trạng thái, bridge FAIL.
+  Simulator cũng nối nhầm broker đó → không có snapshot → test không nhận được
+  message nào (`Da nhan: 0 topic`).
+- **Nguyên nhân**: `tcpServer.listen()` lỗi EADDRINUSE chỉ được log, không có
+  cơ chế chuyển sang cổng trống; và backend nối MQTT **trước khi** biết cổng thật.
+- **Sửa**:
+  1. `mqttAuthBroker.js`: tự dò cổng trống khi cổng yêu cầu bị chiếm
+     (`1883 → 1884 → …`), theo dõi cổng thực tế qua `broker.tcpPort`,
+     thêm `whenReady()` để các promise chờ được cổng đúng.
+  2. `server.js`: dùng `manualConnect` — chờ broker báo cổng rồi mới nối **đúng 1 lần**;
+     `/api/health` trả thêm `brokerPort` + `brokerHost`.
+  3. `test_suite.py`: hỏi `/api/health` để lấy `brokerPort` thật rồi trỏ simulator
+     vào cổng đó (và client MQTT của test cũng dùng cổng đó).
+- **Kiểm chứng**: mô phỏng cổng 1883 bị chiếm → broker chuyển sang 1884,
+  backend nối đúng 1884, test **39/39 PASS** vẫn đạt.
+
+### Bug 14 – Simulator không nối được server cloud qua wss:// (đã sửa)
+- **Hiện tượng**:
+  `python simulator/parking_simulator.py --ws wss://smart-parking-ltdd2.onrender.com/mqtt`
+  → `WebSocket handshake error, connection not upgraded` (không dùng được cho demo cloud).
+- **Nguyên nhân**: nhánh `--ws` tạo client paho mới với `transport="websockets"`
+  nhưng chỉ bật TLS khi có cờ `--tls`. Với `wss://` mà không có `--tls` thì
+  client **không bật TLS** → handshake thất bại.
+- **Sửa**: tự bật TLS khi scheme của URL là `wss://`
+  (`client.tls_set()`), và sửa thông báo lỗi cho đúng địa chỉ thật.
+- **Kiểm chứng**: simulator nối được `wss://smart-parking-ltdd2.onrender.com/mqtt`,
+  cloud báo `online:true`, bridge 2 chiều PASS trên cloud.
+
 ## 12. Server cloud đã deploy thật (Render free)
 
 | Thành phần | Địa chỉ | Kết quả kiểm chứng |
@@ -341,26 +387,31 @@ Chạy tự động mỗi lần push lên `master` → badge CI trong README là
 ✅ Bundle React Native (Android)        ->  3/3 file syntax OK
 ```
 
-## 14. Tình trạng cuối cùng
+## 14. Tình trạng cuối cùng (cập nhật 17/11/2026)
 
 | Hạng mục | Trạng thái |
 |---|---|
 | Firmware ESP32 (Wokwi) | ✅ build + chạy + OLED hiển thị + MQTT OK |
 | Broker Mosquitto | ✅ 1883 + 9001 + ACL + LWT |
-| Simulator Python | ✅ 3 mode + 6 lệnh console |
+| **Broker nội bộ (aedes) có auth + ACL** | ✅ tự dò cổng trống nếu 1883 bị chiếm |
+| Simulator Python | ✅ 3 mode + 6 lệnh console + kết nối được cả `wss://` cloud |
 | Backend REST + SSE + JWT | ✅ 19 endpoint, lưu JSON bền vững |
 | Web Dashboard 5 tab | ✅ biểu đồ + 3 bảng lịch sử + quản lý user |
 | App React Native 4 tab | ✅ cú pháp JSX sạch (`@babel/parser`), sẵn sàng chạy Expo Go |
 | Báo cáo + slide | ✅ `.docx` 44 KB, `.pptx` 43 KB (13 slide), sinh tự động từ markdown |
-| **Bộ test tự động** | ✅ `simulator/test_suite.py` — **39/39 PASS** |
+| **Bộ test tự động** | ✅ `simulator/test_suite.py` — **39/39 PASS** (kể cả khi 1883 bị chiếm) |
 | **CI GitHub Actions** | ✅ `.github/workflows/ci.yml` — 2 job (test E2E + app syntax) |
-| **MQTT-WS Bridge** | ✅ 2 chiều, đúng `requestId` — local + cloud |
+| **MQTT-WS Bridge** | ✅ 2 chiều, đúng `requestId` — local **và** cloud |
 | **Server cloud** | ✅ https://smart-parking-ltdd2.onrender.com (Render free) |
 
 ## 15. Việc còn lại (cần làm tay)
 
-1. `cd app && npm install && npx expo start` → quét QR bằng Expo Go, chỉnh IP broker trong tab Cài đặt.
-2. Deploy `backend/` lên Render (theo `backend/DEPLOY.md`) → lấy link server cloud lâu dài.
-3. Xuất báo cáo/slide lên Drive share "Anyone with the link" → dán link.
-4. Quay video demo 3 phút → up YouTube unlisted / Drive → dán link.
-5. Bấm **Share** trên Wokwi (project đã share sẵn).
+1. `cd app && npm install && npx expo start` → quét QR bằng Expo Go, dán
+   `https://smart-parking-ltdd2.onrender.com` vào tab ⚙️ Cài đặt.
+2. Xuất báo cáo/slide lên Drive share "Anyone with the link" → dán link.
+3. Quay video demo 3 phút → up YouTube unlisted / Drive → dán link.
+4. Bấm **Share** trên Wokwi (project đã share sẵn).
+
+> **Lưu ý khi quay demo trên cloud**: chạy
+> `python simulator/parking_simulator.py --mode quiet --ws wss://smart-parking-ltdd2.onrender.com/mqtt --user esp32 --password esp32123`
+> để có "thiết bị" giả lập gắn vào broker của server cloud.

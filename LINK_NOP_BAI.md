@@ -71,10 +71,36 @@ python simulator/test_suite.py
    `https://smart-parking-ltdd2.onrender.com` → chế độ **🌐 Qua Backend**.
    *(Điện thoại và máy tính phải cùng mạng WiFi nếu chạy local; dùng link cloud thì không cần.)*
 
-2. **Báo cáo + slide** (ô #7): file đã sinh sẵn ở `docs/`. Upload Drive → share "Anyone with the link".
+2. **Báo cáo + slide** (ô #7): file đã sinh sẵn ở `docs/`.
+   - `docs/BaoCao_LTDD2_BaiDoXe.docx` (50 KB)
+   - `docs/Slide_ThuyetTrinh.pptx` (15 slide)
+   → Upload Drive → share "Anyone with the link" → dán link
 
 3. **Video demo** (ô #8): theo kịch bản `docs/MINH_CHUNG.md`.
+   Nếu quay trên **server cloud**, chạy trước simulator gắn vào broker cloud:
+   ```powershell
+   python simulator/parking_simulator.py --mode quiet `
+     --ws wss://smart-parking-ltdd2.onrender.com/mqtt --user esp32 --password esp32123
+   ```
 
 4. **Kiểm tra link Wokwi**: bấm **Share** trên Wokwi (đã share sẵn) → chắc chắn "Anyone with the link".
 
 > ⏱️ Render free ngủ sau ~15 phút không có request → lần mở đầu tiên có thể chờ 30–60 giây.
+
+---
+
+## Sửa lỗi ngày 17/11/2026 (4 lỗi nghiêm trọng)
+
+Khi chạy lại toàn bộ hệ thống trên máy thật, phát hiện 4 lỗi làm **đứt đường kết nối
+App → Broker → Server trên cloud** — tính năng quan trọng nhất của đồ án:
+
+| # | Lỗi | Sửa |
+|---|---|---|
+| 12 | `test_bridge.js` không gửi user/password → *"Bad username or password"* (FAIL cả cloud) | Gửi `app/app123` giống hệt App |
+| 13 | Backend nối nhầm broker khi cổng 1883 bị chiếm → mất trạng thái | Broker tự dò cổng trống (1883→1884…), backend chờ cổng thật rồi nối, `/api/health` trả `brokerPort` |
+| 14 | Simulator không bật TLS với `wss://` → *"WebSocket handshake error"* | Tự bật TLS khi scheme là `wss://` |
+| 15 | Log broker in trùng lặp | Một listener `"error"` duy nhất + sự kiện `"listening"` |
+
+**Kiểm chứng**: 39/39 PASS (cổng 1883 trống) · 39/39 PASS (1883 bị chiếm) ·
+bridge 2 chiều PASS trên cloud · simulator nối cloud → `online:true`.
+Chi tiết: `docs/KET_QUA_TEST.md` mục 10.

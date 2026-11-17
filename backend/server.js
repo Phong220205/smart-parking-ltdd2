@@ -40,6 +40,9 @@ app.use((req, res, next) => {
 });
 
 const MQTT_URL  = process.env.MQTT_URL  || "mqtt://localhost:1883";
+const MQTT_HOST_FOR_INFO = (() => {
+  try { return new URL(MQTT_URL).hostname; } catch { return "localhost"; }
+})();
 const MQTT_USER = process.env.MQTT_USER === undefined ? "esp32" : process.env.MQTT_USER;
 const MQTT_PASS = process.env.MQTT_PASS === undefined ? "esp32123" : process.env.MQTT_PASS;
 const PORT      = process.env.PORT      || 3000;
@@ -216,16 +219,50 @@ if (EMBED_BROKER) {
 
 // Kết nối MQTT của backend: nếu có broker nội bộ thì nối vào chính nó,
 // ngược lại nối broker ngoài theo MQTT_URL.
-const MQTT_TARGET = EMBED_BROKER
+// [FIX] Broker nội bộ có thể phải dùng cổng KHÁC 1883 nếu 1883 đã bị chiếm
+// (Mosquitto Docker, hay project Node khác của người dùng). Trước đây backend
+// nối ngay vào 1883 -> có thể nối NHẦM sang broker lạ (sai user/pass), mất
+// trạng thái và làm test bridge FAIL. Nay ta CHỜ broker báo cổng thực tế
+// rồi mới nối, và nếu broker sau đó phải đổi cổng thì nối lại cho đúng.
+let MQTT_TARGET = EMBED_BROKER
   ? `mqtt://127.0.0.1:${EMBED_TCP_PORT}`
   : MQTT_URL;
 
-const mc = mqtt.connect(MQTT_TARGET, {
+const MC_OPTS = {
   username: MQTT_USER || undefined, password: MQTT_PASS || undefined,
   reconnectPeriod: 2000,
   clientId: `backend-${process.pid}-${Date.now().toString(36)}`,
   clean: true,
-});
+};
+
+// Tạo client nhưng chưa nối ngay (để tránh nối nhầm cổng).
+// Với broker nội bộ: ta tạo client với `manual connect` (không tự nối),
+// chờ broker báo cổng thực tế rồi mới nối đúng 1 lần.
+let mc;
+if (EMBED_BROKER && embeddedBroker) {
+  mc = mqtt.connect(`mqtt://127.0.0.1:${EMBED_TCP_PORT}`, {
+    ...MC_OPTS,
+    reconnectPeriod: 0,
+    manualConnect: true,   // chưa nối cho tới khi biết cổng đúng
+  });
+  embeddedBroker.whenReady(10000).then((port) => {
+    mc.options.reconnectPeriod = MC_OPTS.reconnectPeriod;
+    if (port !== EMBED_TCP_PORT) {
+      console.log(`[MQTT] Broker noi bo chay o cong ${port} (${EMBED_TCP_PORT} dang bi chiem)`);
+      mc.options.port = port;
+      mc.options.host = "127.0.0.1";
+    }
+    MQTT_TARGET = `mqtt://127.0.0.1:${mc.options.port}`;
+    mc.connect();
+  }).catch((e) => {
+    console.error("[BROKER] Loi khi cho broker noi bo:", e.message);
+    mc.options.reconnectPeriod = MC_OPTS.reconnectPeriod;
+    mc.connect();
+  });
+} else {
+  mc = mqtt.connect(MQTT_TARGET, MC_OPTS);
+}
+
 mc.on("connect", () => {
   console.log("[MQTT] Backend connected", MQTT_TARGET);
   mc.subscribe([
@@ -313,6 +350,11 @@ mc.on("error", (e) => console.error("[MQTT] error:", e.message));
 app.get("/api/health", (req, res) => res.json({
   ok: true, mqtt: mc.connected, online: systemOnline,
   slots: Object.keys(db.slots).length, ts: now(),
+  // [FIX] Cổng broker nội bộ thực tế. Nếu 1883 bị chiếm bởi broker khác,
+  // broker nội bộ tự chuyển sang cổng trống -> simulator/App phải biết cổng
+  // này mới nối đúng (nếu không sẽ nối nhầm sang broker lạ và mất trạng thái).
+  brokerPort: embeddedBroker ? embeddedBroker.tcpPort : null,
+  brokerHost: embeddedBroker ? "127.0.0.1" : MQTT_HOST_FOR_INFO,
 }));
 
 // GET /api/status -> toan bo trang thai realtime
@@ -609,3 +651,14 @@ server.listen(PORT, () => {
   console.log(" DATA : " + DATA_FILE);
   console.log("=========================================");
 });
+
+// [FIX] In cổng broker THỰC TỄ (có thể khác 1883 nếu 1883 bị chiếm) để
+// người dùng biết simulator/App phải cấu hình cổng nào.
+if (embeddedBroker) {
+  embeddedBroker.whenReady(10000).then((port) => {
+    if (port !== EMBED_TCP_PORT) {
+      console.log(`[BROKER] Luu y: cong ${EMBED_TCP_PORT} dang bi chiem, broker noi bo chay o cong ${port}.`);
+      console.log(`[BROKER] Simulator/App phai tro toi cong ${port} (xem /api/health -> brokerPort).`);
+    }
+  }).catch(() => {});
+}

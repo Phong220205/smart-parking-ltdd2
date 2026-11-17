@@ -98,11 +98,19 @@
 1 điện thoại. Mọi thứ đều chạy trên `https://smart-parking-ltdd2.onrender.com`.
 
 ```powershell
-# 1. Bật simulator kết nối broker public (thay cho ESP32)
-python simulator/parking_simulator.py --mode demo --no-auth --host test.mosquitto.org --port 1883
+# 1. Bật simulator kết nối broker của SERVER CLOUD (thay cho ESP32)
+#    -> dùng đúng đường dẫn MQTT-over-WebSocket mà App dùng
+python simulator/parking_simulator.py --mode quiet `
+  --ws wss://smart-parking-ltdd2.onrender.com/mqtt --user esp32 --password esp32123
 
 # 2. Mở Dashboard cloud
 start https://smart-parking-ltdd2.onrender.com
+```
+
+Kiểm tra nhanh thiết bị đã "vào" broker cloud:
+```powershell
+curl https://smart-parking-ltdd2.onrender.com/api/health
+# -> {"ok":true,"mqtt":true,"online":true,...}
 ```
 
 Trên điện thoại: mở App → ⚙️ Cài đặt kết nối → dán

@@ -27,6 +27,32 @@ UNIQ = str(int(time.time()))[-6:]
 
 results = []
 
+# Cache cong broker thuc te cua backend (lay tu /api/health).
+_broker_addr = None
+
+
+def resolve_broker():
+    """Tra (host, port) cua broker MQTT thuc te cua backend.
+
+    Backend co broker noi bo (aedes) - neu cong 1883 bi chiem, broker tu
+    chuyen sang cong trong. Endpoint /api/health tra ve `brokerPort` la cong
+    thuc te. Neu khong lay duoc (backend chua chay / broker ngoai) thi dung
+    MQTT_HOST / MQTT_PORT tu bien moi truong.
+    """
+    global _broker_addr
+    if _broker_addr:
+        return _broker_addr
+    try:
+        h = get("/api/health")
+        bp = h.get("brokerPort")
+        bh = h.get("brokerHost") or "127.0.0.1"
+        if bp:
+            _broker_addr = (bh, int(bp))
+            return _broker_addr
+    except Exception:
+        pass
+    return (MQTT_HOST, MQTT_PORT)
+
 
 def check(name, cond, detail=""):
     results.append((name, bool(cond), detail))
@@ -82,7 +108,9 @@ def mqtt_subscribe(topics):
     if MQTT_USER:
         c.username_pw_set(MQTT_USER, MQTT_PASS)
     c.on_message = lambda cl, u, m: msgs.append((m.topic, json.loads(m.payload.decode())))
-    c.connect(MQTT_HOST, MQTT_PORT, 30)
+    # [FIX] Dung cung cong broker THUC TE cua backend (xem start_simulator).
+    host, port = resolve_broker()
+    c.connect(host, port, 30)
     c.loop_start()
     for t in topics:
         c.subscribe(t, qos=1)
@@ -117,9 +145,27 @@ def kill_other_simulators():
 
 
 def start_simulator():
-    """Khoi dong simulator o quiet mode de test khong bi nhieu du lieu."""
+    """Khoi dong simulator o quiet mode de test khong bi nhieu du lieu.
+
+    [FIX] Broker MQTT cua backend co the tu chuyen sang cong khac 1883 khi
+    1883 da bi chiem (Mosquitto Docker, hay project Node khac cua nguoi dung).
+    Vì vậy ta hoi backend truoc bang /api/health de lay `brokerPort` THUC TE
+    rồi moi tro simulator toi dung cong do. Neu khong, simulator noi nham sang
+    broker khac -> khong co snapshot -> test bridge FAIL.
+    """
     cmd = [sys.executable, SIM_SCRIPT, "--mode", "quiet",
            "--client-id", f"sim-test-{os.getpid()}"]
+
+    # Lay cong broker thuc te tu backend (neu co).
+    try:
+        h = get("/api/health")
+        bport = h.get("brokerPort")
+        if bport:
+            cmd += ["--host", "127.0.0.1", "--port", str(int(bport))]
+            print(f"[INFO] Broker that cua backend: 127.0.0.1:{bport}")
+    except Exception as e:
+        print(f"[WARN] Khong lay duoc brokerPort tu backend: {e}")
+
     if not MQTT_USER:
         cmd.append("--no-auth")
     proc = subprocess.Popen(

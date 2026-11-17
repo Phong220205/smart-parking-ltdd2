@@ -102,6 +102,10 @@ ESP32 (thật/Wokwi)  ──MQTT 1883──▶  Mosquitto Broker  ──WS 9001�
 - **Server cloud thật (Render free)**: `https://smart-parking-ltdd2.onrender.com`
   → REST + SSE + Dashboard + bridge, tất cả trong **1 URL duy nhất**.
 - **Trong App chỉ nhập 1 dòng** → App tự suy ra REST + MQTT-WS.
+- **Broker nội bộ có xác thực** → client (App/ESP32/simulator/test) đều phải gửi
+  `user/password`; App dùng `app/app123` (chỉ đọc + gửi lệnh).
+- **Tự dò cổng trống**: nếu 1883 bị chiếm, broker chuyển sang 1884 và báo qua
+  `/api/health → brokerPort` (thiết bị/App cấu hình theo).
 - *Gợi ý hình: sơ đồ App → Bridge → Broker + ảnh Dashboard trên điện thoại mở link cloud.*
 
 ### Slide 9 – Ứng dụng di động (Lab3)
@@ -140,6 +144,7 @@ ESP32 (thật/Wokwi)  ──MQTT 1883──▶  Mosquitto Broker  ──WS 9001�
 - **CI GitHub Actions**: mỗi lần push tự chạy lại 39 checkpoint + kiểm tra syntax firmware/backend/app (7 file JSX).
   *Kết quả thực tế trên GitHub: `KET QUA: 39/39 PASS` + `7/7 file syntax OK`.*
 - **9 bug đã tìm & sửa**: OLED trắng xanh · lệnh ENTER bị IR ghi đè · nhiễu bounce nút bấm · token JWT sai · barrier không lưu `db.gate` · test SSE đọc theo byte bị treo · test 404 mất mã HTTP · bridge sai thứ tự route · chứng thư thiếu AuthorityKeyIdentifier.
+- **4 bug đã tìm & sửa (đợt 17/11/2026)**: bridge thiếu user/password → "Bad username or password" (FAIL cả trên cloud) · backend nối nhầm broker khi cổng 1883 bị chiếm · simulator không bật TLS khi nối `wss://` cloud · log trùng do đăng ký listener lặp.
 - *Gợi ý hình: bảng kết quả test + ảnh OLED đang hiển thị.*
 
 ### Slide 12 – Kết luận & hướng phát triển

@@ -90,16 +90,23 @@ if args.ws:
     ws_host = parsed.hostname or args.host
     ws_path = parsed.path or "/mqtt"
     ws_port = parsed.port or (443 if parsed.scheme == "wss" else 80)
+    # [FIX] Scheme "wss://" BẮT BUỘC phải bật TLS cho client paho.
+    #   Trước đây TLS chỉ được bật khi có cờ --tls, nên lệnh
+    #     --ws wss://smart-parking-ltdd2.onrender.com/mqtt
+    #   (đúng cách dùng để demo trên server cloud) luôn FAIL với
+    #   "WebSocket handshake error, connection not upgraded".
+    #   Nay: tự bật TLS khi scheme là wss:// (trừ khi --no-tls).
+    ws_is_tls = parsed.scheme == "wss"
     if hasattr(client, "ws_set_options"):
         # paho-mqtt >= 2.0: dung transport "websockets" + ws_set_options
-        client.ws_set_options(path=ws_path)
         client = mqtt.Client(client_id=args.client_id or f"sim-esp32-{random.randint(0, 99999)}",
                              protocol=mqtt.MQTTv311, transport="websockets")
         if args.user and args.password and not args.no_auth:
             client.username_pw_set(args.user, args.password)
         client.ws_set_options(path=ws_path)
         client.will_set("parking/system/status", json.dumps({"online": False}), qos=1, retain=True)
-        if args.tls:
+        if args.tls or ws_is_tls:
+            # Dung CA he thong (verify) cho wss:// -> an toan + dung chung may.
             client.tls_set()
     else:
         # paho-mqtt 1.x: dung WebSocketWrapper
@@ -109,7 +116,7 @@ if args.ws:
             print("Can paho-mqtt >= 1.6 de ho tro MQTT-over-WebSocket")
             sys.exit(1)
         client = WebSocketWrapper(client, ws_url, subprotocols=["mqtt"])
-    print(f"[WS] MQTT-over-WebSocket -> {ws_url} (path={ws_path})")
+    print(f"[WS] MQTT-over-WebSocket -> {ws_url} (path={ws_path}, tls={ws_is_tls or args.tls})")
 
 
 # ------------------------------- PUBLISH -------------------------------------
@@ -304,7 +311,9 @@ try:
     else:
         client.connect(args.host, args.port, 60)
 except Exception as e:
-    print(f"Khong ket noi duoc broker {args.host}:{args.port} - {e}")
+    # [FIX] Thong bao dung dia chi that (truong hop WS khong phai args.host).
+    where = f"{ws_host}:{ws_port}{ws_path}" if args.ws else f"{args.host}:{args.port}"
+    print(f"Khong ket noi duoc broker {where} - {e}")
     sys.exit(1)
 
 client.subscribe("parking/booking/+/set", qos=1)
