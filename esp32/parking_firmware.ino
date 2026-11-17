@@ -1290,7 +1290,9 @@ void loop() {
 #if MQTT_USE_WS
     if (millis() - lastMqttPing > 8000) {
       lastMqttPing = millis();
-      wsClient.sendMqttPing();
+      bool okPing = wsClient.sendMqttPing();
+      // [DIAG] Log kết quả gửi PINGREQ để theo dõi nhịp sống MQTT.
+      Serial.printf("[MQTT] PINGREQ #%lu gui=%s\n", lastMqttPing / 8000, okPing ? "OK" : "LOI");
     }
 #endif
   }
@@ -1410,7 +1412,12 @@ void loop() {
     h["clock"] = nowEpochMs();            // [N3] giờ thực tế
     h["wdt"] = wdtEnabled;                // [N4] watchdog đang bật
     char b[384]; serializeJson(h, b);
-    mqtt.publish("parking/system/heartbeat", b, false);
+    bool okPub = mqtt.publish("parking/system/heartbeat", b, false);
+    // [DIAG] Ghi log kết quả publish để biết chính xác lớp nào hỏng:
+    //   okPub=false -> không gửi được ra socket (lỗi tầng WebSocket/TLS)
+    //   okPub=true  -> đã gửi, broker sẽ nhận (lỗi nằm ở tầng broker/ACL)
+    Serial.printf("[MQTT] Heartbeat #%lu gui=%s (state=%d)\n",
+                   lastBeat / 8000, okPub ? "OK" : "LOI", mqtt.state());
   }
 
   // --- Snapshot định kỳ (mỗi 30 giây) ---
