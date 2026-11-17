@@ -25,7 +25,7 @@ import { createServer } from "node:net";
 import crypto from "node:crypto";
 import Aedes from "aedes";
 import { WebSocketServer } from "ws";
-import websocketStream from "websocket-stream";
+import { createWsStream } from "./mqttWsAdapter.js";
 
 // --------------------------- HASH MẬT KHẨU ---------------------------------
 // SHA-256 hex của mật khẩu. Cách này tương đương mosquitto_passwd:
@@ -227,9 +227,11 @@ export function createAuthBroker({ tcpPort = 1883, wsPort = 9001, onLog = () => 
   const wss = new WebSocketServer({ noServer: true });
   wss.on("connection", (ws) => {
     // Chuyển kết nối WebSocket thành stream byte cho aedes đọc/ghi được.
-    // websocket-stream làm đúng việc này (tương thích với net.Socket mà
-    // aedes yêu cầu: có setTimeout, setMaxListeners, pipe...).
-    const duplex = websocketStream(ws);
+    // Dùng adapter tự viết (mqttWsAdapter.js) dựa trên "ws" bản mới (v8).
+    // [FIX] Trước đây dùng thư viện "websocket-stream" -> kéo theo ws@3.3.3
+    // (từ 2016) -> xử lý frame WebSocket sai -> broker không đếm được
+    // PINGREQ -> ngắt client sau ~16s với lỗi "keep alive timeout".
+    const duplex = createWsStream(ws);
     aedes.handle(duplex);
   });
   return {
