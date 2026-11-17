@@ -24,3 +24,7 @@ docs/_*.txt
 _serve.py
 _patch_*.py
 
+
+# log server local (test)
+backend/_srv.log
+backend/_srv.err
