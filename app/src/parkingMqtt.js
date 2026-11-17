@@ -1,4 +1,10 @@
-import 'react-native-url-polyfill/auto';
+// KHONG dung 'react-native-url-polyfill/auto' o day.
+//   Hermes (RN 0.88) da co san global URL chuan WHATWG, hop le ca voi scheme
+//   file:// cua Expo. Polyfill whatwg-url (v2.0.0) thay the global URL bang
+//   ban khong parse duoc file:// -> Expo that bai "Cannot read property
+//   'decode' of undefined" va "Could not determine host".
+//   MQTT/WebSocket o RN khong can polyfill URL (ws:// duoc xu ly boi module
+//   net/tls native cua RN).
 import mqtt from 'mqtt';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
