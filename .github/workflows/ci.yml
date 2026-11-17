@@ -82,6 +82,10 @@ jobs:
             eclipse-mosquitto:2.0 mosquitto_passwd -b -c /work/passwd esp32 esp32123
           docker run --rm -v "$PWD/broker/config:/work" \
             eclipse-mosquitto:2.0 mosquitto_passwd -b /work/passwd app app123
+          # [FIX] mosquitto_passwd tao file voi quyen 600 (owner = root trong container)
+          # -> user cua runner khong doc duoc -> "Permission denied".
+          # Phai chmod TRUOC khi cat / dung truoc khi broker doc file.
+          sudo chmod 644 broker/config/passwd broker/config/acl.conf
           echo "--- passwd ---" && cat broker/config/passwd
 
       - name: "Bat broker Mosquitto (4 listener: 1883/9001/8883 TLS/9002 WSS)"
@@ -101,6 +105,15 @@ jobs:
           docker logs parking-mosquitto-ci 2>&1 | grep -E "Opening|running" || true
 
       - name: Bat backend
+        env:
+          # [FIX] CI chay broker Mosquitto (co TLS 8883/9002) o port 1883.
+          # Backend PHAI dung chinh broker do (khong phai broker noi bo) de:
+          #   - test_tls.py kiem thu duoc TLS cua Mosquitto
+          #   - ACL/passwd cua Mosquitto duoc ap dung dung nhu thiet bi that
+          # EMBED_BROKER=false -> backend dung che do proxy (client /mqtt khong
+          # can xac thuc, App/ESP32 gui user/pass truc tiep toi Mosquitto).
+          EMBED_BROKER: "false"
+          MQTT_URL: mqtt://localhost:1883
         run: |
           cd backend
           nohup node server.js > ../backend_ci.log 2>&1 &
