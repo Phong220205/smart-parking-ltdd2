@@ -20,8 +20,11 @@ from docx.enum.table import WD_TABLE_ALIGNMENT
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "docs" / "BaoCao_LTDD2_BaiDoXe.md"
 OUT = ROOT / "docs" / "BaoCao_LTDD2_BaiDoXe.docx"
+IMG_DIR = ROOT / "docs" / "anh"
 
 ACCENT = RGBColor(0x09, 0x84, 0xE3)
+MAX_IMG_W = Inches(6.0)  # bề rộng tối đa cho ảnh (khung giấy A4 + margin 0.9")
+MAX_IMG_H = Inches(4.8)  # chiều cao tối đa (để caption + chữ không bị đẩy sang trang sau)
 
 
 def add_table(doc, rows):
@@ -41,6 +44,77 @@ def add_table(doc, rows):
                     if i == 0:
                         r.bold = True
     doc.add_paragraph()
+
+
+def add_image(doc, md_path, alt):
+    """
+    Chup anh tu markdown vao docx.
+
+    Duong dan trong markdown:
+      - tuong doi voi file markdown  :  anh/wokwi-oled.png
+      - tuong doi voi thu muc docs/   :  docs/anh/wokwi-oled.png
+      - tuong doi voi thu muc repo   :  anh/wokwi-oled.png
+    """
+    md_path = Path(md_path)
+    cand = [
+        md_path.parent / md_path,
+        IMG_DIR / md_path.name,
+        ROOT / md_path,
+        IMG_DIR.parent / md_path,
+    ]
+    # thu gia dien ban : docs/anh/foo.png -> anh/foo.png
+    p = md_path
+    if p.parts and p.parts[0] == "docs":
+        cand.append(IMG_DIR / Path(*p.parts[1:]))
+    if p.parts and p.parts[0] == "anh":
+        cand.append(ROOT / p)
+
+    img_path = None
+    for c in cand:
+        try:
+            if c.exists() and c.is_file():
+                img_path = c
+                break
+        except OSError:
+            continue
+
+    if img_path is None:
+        print(f"  [!] Khong tim thay anh: {md_path}")
+        # ghi chu thay vi bo qua im lang
+        p = doc.add_paragraph()
+        r = p.add_run(f"[Thiếu ảnh: {md_path}]")
+        r.italic = True
+        r.font.size = Pt(10)
+        r.font.color.rgb = RGBColor(0xAA, 0x00, 0x00)
+        return False
+
+    # Chon kich thuoc: gioi han ca bo rong va cao, giu ti le
+    try:
+        from PIL import Image
+        with Image.open(img_path) as im:
+            iw, ih = im.size
+    except Exception:
+        iw, ih = 1600, 900
+    scale = min(MAX_IMG_W / iw, MAX_IMG_H / ih)
+    w = int(iw * scale)
+    h = int(ih * scale)
+
+    doc.add_picture(str(img_path), width=w, height=h)
+    # canh giua anh
+    last = doc.paragraphs[-1]
+    last.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    last.paragraph_format.space_before = Pt(6)
+    last.paragraph_format.space_after = Pt(2)
+
+    # caption
+    cap = doc.add_paragraph()
+    cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    r = cap.add_run(alt.strip())
+    r.italic = True
+    r.font.size = Pt(10)
+    r.font.color.rgb = RGBColor(0x55, 0x55, 0x55)
+    cap.paragraph_format.space_after = Pt(10)
+    return True
 
 
 def build():
@@ -99,6 +173,13 @@ def build():
             i += 1
             continue
         flush_table()
+
+        # anh: ![mo ta](duong/dan.png)
+        m = re.match(r"^!\[([^\]]*)\]\(([^)]+)\)\s*$", line.strip())
+        if m:
+            add_image(doc, m.group(2), m.group(1))
+            i += 1
+            continue
 
         # tieu de
         m = re.match(r"^(#{1,6})\s+(.*)$", line)

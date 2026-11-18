@@ -64,7 +64,8 @@ ESP32 (thật/Wokwi)  ──MQTT 1883──▶  Mosquitto Broker  ──WS 9001�
 - ⚠️ **Bài học**: phải dùng `board-ssd1306` + `esp:D21/D22` – sai chân thì màn **trắng xanh** dù code đúng.
 - Lệnh Serial demo: `BOOK:P1:SV01`, `ENTER:P1:SV01`, `EXIT:P1`, `RFID:A1B2C3`, `DEMO`.
 - **BOM ~400–500k** nếu mua thật.
-- *Gợi ý hình: ảnh Wokwi đang chạy, OLED hiện "Trong: 5/6 CLOSED".*
+
+![Màn hình OLED SSD1306 của ESP32 trong trình mô phỏng Wokwi](anh/wokwi-oled.png)
 
 ### Slide 7 – Broker (Lab2)
 - `docker-compose.yml` – image `eclipse-mosquitto:2.0`, **4 listener**:
@@ -92,7 +93,8 @@ ESP32 (thật/Wokwi)  ──MQTT 1883──▶  Mosquitto Broker  ──WS 9001�
 - **Bảo mật API**: rate limit 120 req/phút/IP → 429 · validate input (mã ô `P1..P6`, allowlist action) → 400 · 404/500 JSON chuẩn · log request kèm thời gian xử lý.
 - **Chẩn đoán**: `GET /api/health/deep` → uptime, MQTT, số liệu, bộ nhớ.
 - **Dashboard 5 tab**: Sơ đồ bãi · Thống kê (Chart.js) · Lịch sử · Người dùng · Cài đặt.
-- *Gợi ý hình: ảnh Dashboard tab Thống kê (biểu đồ cột + đường + tròn).*
+
+![Web Dashboard trên server cloud - tab Sơ đồ bãi với lưới 6 ô realtime](anh/cloud-sodobai.png)
 
 ### Slide 8b – MQTT-over-WebSocket Bridge & Server cloud (điểm nhấn kỹ thuật)
 - **Vấn đề thật**: App React Native chỉ nối MQTT qua **WebSocket**; broker public
@@ -106,7 +108,8 @@ ESP32 (thật/Wokwi)  ──MQTT 1883──▶  Mosquitto Broker  ──WS 9001�
   `user/password`; App dùng `app/app123` (chỉ đọc + gửi lệnh).
 - **Tự dò cổng trống**: nếu 1883 bị chiếm, broker chuyển sang 1884 và báo qua
   `/api/health → brokerPort` (thiết bị/App cấu hình theo).
-- *Gợi ý hình: sơ đồ App → Bridge → Broker + ảnh Dashboard trên điện thoại mở link cloud.*
+
+![Tab Thống kê trên dashboard cloud với 3 biểu đồ Chart.js](anh/cloud-thongke.png)
 
 ### Slide 9 – Ứng dụng di động (Lab3)
 - **4 tab**: 🅿️ Bãi · 🧾 Lịch sử · 📊 Thống kê · 👤 Tài khoản.
@@ -115,8 +118,9 @@ ESP32 (thật/Wokwi)  ──MQTT 1883──▶  Mosquitto Broker  ──WS 9001�
 - Xử lý lỗi: banner ONLINE/OFFLINE, **timeout đặt chỗ 5s**, tự reconnect 2s, `try/catch` payload.
 - **Cấu trúc tách component/service rõ ràng** (từ 584 dòng → App.js còn 78 dòng):
   `App.js` (điều phối) · `components/Tabs.js` (view) · `hooks/useParking.js` (logic) ·
-  `parkingMqtt.js` + `api.js` (service) · `constants.js` + `utils.js` (dùng chung).
-- *Gợi ý hình: ảnh App Expo Go (chụp màn hình điện thoại) + cây thư mục `app/src/`.*
+`parkingMqtt.js` + `api.js` (service) · `constants.js` + `utils.js` (dùng chung).
+
+![Mã QR Expo Go để cài app React Native lên điện thoại thật](anh/expo-go-qr.png)
 
 ### Slide 10 – Quy tắc nghiệp vụ
 - **Tính phí**: 30 phút đầu miễn phí → sau đó **3000đ/giờ** (làm tròn lên). *Test: 95 phút → 6000đ.*
@@ -147,7 +151,8 @@ ESP32 (thật/Wokwi)  ──MQTT 1883──▶  Mosquitto Broker  ──WS 9001�
 - **4 bug đã tìm & sửa (đợt 17/11/2026)**: bridge thiếu user/password → "Bad username or password" (FAIL cả trên cloud) · backend nối nhầm broker khi cổng 1883 bị chiếm · simulator không bật TLS khi nối `wss://` cloud · log trùng do đăng ký listener lặp.
 - **3 lỗi CI**: workflow YAML không parse (dấu `:` trong tên step) → **chưa từng chạy checkpoint nào** · file `passwd` quyền 600 → Permission denied · backend dùng nhầm broker nội bộ → bỏ qua test TLS.
   → **CI hiện xanh thật: 39/39 PASS + TLS 5/5 PASS.**
-- *Gợi ý hình: bảng kết quả test + ảnh OLED đang hiển thị.*
+
+![Serial Monitor Wokwi - log kết nối MQTT và trạng thái 6 ô được cập nhật mỗi giây](anh/wokwi-serial2.png)
 
 ### Slide 12 – Kết luận & hướng phát triển
 - **Kết luận**: hệ thống 4 tầng chạy liên thông, mô phỏng 100%, đạt đủ yêu cầu 3 lab + server + nâng cấp.

@@ -77,6 +77,18 @@ Khi triển khai trên Wokwi, màn hình hiển thị **không sáng** dù code 
 
 Nếu đấu sai chân, Wokwi vẫn biên dịch và chạy bình thường (Serial in ra log đúng) nhưng màn hình **trắng xanh im lặng** – rất dễ gây hiểu nhầm là lỗi code. Sau khi sửa cả 3 điểm, màn hiển thị đúng và đã được kiểm chứng bằng cách **đọc trực tiếp mảng pixel trên canvas** của trình mô phỏng.
 
+Hình 1 – Màn hình OLED SSD1306 hiển thị đúng 6 dòng sau khi sửa cả 3 lỗi trên:
+
+![Màn hình OLED SSD1306 hiển thị 6 dòng: tiêu đề, trạng thái ô đỗ, bảng 6 ô, doanh thu, uptime + trạng thái MQTT, thẻ RFID gần nhất](anh/wokwi-oled.png)
+
+Hình 2 – Serial Monitor trên Wokwi cho thấy firmware kết nối MQTT thành công và log chẩn đoán mỗi giây:
+
+![Serial Monitor Wokwi hiển thị log kết nối MQTT và trạng thái 6 ô](anh/wokwi-serial2.png)
+
+Hình 3 – Sơ đồ mô phỏng Wokwi đầy đủ (ESP32 DevKit V1, 6 nút IR, OLED, RFID, servo barrier, buzzer):
+
+![Sơ đồ mô phỏng Wokwi với ESP32, 6 cảm biến IR, OLED, module RFID, servo barrier và buzzer](anh/wokwi-chongtrung.png)
+
 ### 4.3 Firmware ESP32 (696 dòng)
 
 | Nhóm tính năng | Chi tiết |
@@ -94,6 +106,14 @@ Nếu đấu sai chân, Wokwi vẫn biên dịch và chạy bình thường (Ser
 | Chẩn đoán | Log chi tiết mỗi giây: `Slots: X_____ MQTT:OK DT:6000d` |
 | Chống nhiễu cảm biến | **Debounce 200 ms** cho 6 IR (3 biến: `irRaw` / `irChangeAt` / `irStable`) – loại bỏ hiện tượng bounce của nút bấm |
 | Tách trạng thái | `irShadow[6]` (cảm biến đã xác nhận) + `manualMode[6]` (ô do lệnh thủ công điều khiển) để lệnh Serial không bị vòng lặp IR ghi đè |
+
+Hình 4 – Quét thẻ RFID RC522: firmware đọc UID, đối chiếu với 8 thẻ đã đăng ký và mở barrier cho ô đã đặt:
+
+![Module RFID RC522 trên Wokwi - quét thẻ để mở barrier cho ô đã đặt chỗ](anh/wokwi-rfid.png)
+
+Hình 5 – Góc nhìn toàn cảnh bãi đỗ trong trình mô phỏng Wokwi:
+
+![Toàn cảnh bãi đỗ xe trong trình mô phỏng Wokwi](anh/wokwi-toancanh.png)
 
 ### 4.4 Simulator Python (thay ESP32)
 
@@ -210,6 +230,14 @@ App --wss://smart-parking-ltdd2.onrender.com/mqtt--> BRIDGE --mqtt://test.mosqui
 App tự suy ra cả REST lẫn MQTT-WS. Đây là điểm nhấn kỹ thuật đáng chấm điểm
 của đồ án.
 
+Hình 14 – Danh sách topic MQTT đang có trên broker (kiểm chứng bằng MQTT Explorer):
+
+![Các topic MQTT của hệ thống bãi đỗ xe xem trong MQTT Explorer](anh/mqtt-explorer-topics.png)
+
+Hình 15 – Kiểm tra REST API trên cloud trực tiếp từ terminal (`/api/health`, `/api/bridge`):
+
+![Kết quả gọi REST API trên server cloud từ terminal](anh/terminal-api-cloud.png)
+
 ### 6.3 Chức năng
 - **Cầu nối MQTT ↔ REST**: subscribe 8 topic, cache trạng thái 6 ô vào RAM.
 - **Lưu trữ bền vững**: `data/parking.json` – lưu booking, hóa đơn, log RFID, sự kiện, tài khoản. Ghi trễ 400ms (debounce) để không ghi đĩa liên tục.
@@ -251,6 +279,22 @@ GET /api/bridge       -> {"ok":true,"path":"/mqtt","upstreamConnected":true}
 GET /                 -> Dashboard 5 tab (16.6 KB), đủ Chart.js + SSE
 GET /api/stats        -> days=7, byHour=24, topUsers=2
 ```
+
+Hình 6 – Web Dashboard 5 tab trên server cloud, tab "Sơ đồ bãi" hiển thị lưới 6 ô với trạng thái realtime:
+
+![Web Dashboard trên server cloud - tab Sơ đồ bãi với lưới 6 ô đỗ xe realtime](anh/cloud-sodobai.png)
+
+Hình 7 – Tab "Thống kê" với 4 KPI và 3 biểu đồ Chart.js (doanh thu 7 ngày, doanh thu theo giờ, top người dùng):
+
+![Tab Thống kê trên dashboard cloud với biểu đồ doanh thu 7 ngày, doanh thu theo giờ và top người dùng](anh/cloud-thongke.png)
+
+Hình 8 – Tab "Cài đặt" cho phép đổi địa chỉ Backend ngay trên điện thoại:
+
+![Tab Cài đặt của dashboard cloud cho phép đổi địa chỉ Backend](anh/cloud-caidat.png)
+
+Hình 9 – Giao diện dashboard chạy trên máy cục bộ (Backend Node.js) với lưới ô đỗ đầy đủ:
+
+![Dashboard chạy trên máy cục bộ với lưới ô đỗ và trạng thái realtime](anh/dashboard-local-sodobai.png)
 
 ## 7. Ứng dụng di động (Lab3)
 
@@ -298,6 +342,22 @@ app/src/
 | 🧾 Lịch sử | KPI tổng phí & lượt xe, danh sách hóa đơn (ô, user, phút, phí, giờ), lịch sử đặt chỗ có tag OK/LỖI |
 | 📊 Thống kê | 4 KPI, biểu đồ cột doanh thu 7 ngày, biểu đồ đường doanh thu theo giờ, thanh ngang top user – tất cả vẽ bằng View không cần thư viện chart |
 | 👤 Tài khoản | Đăng ký / đăng nhập, xem thông tin tài khoản, đăng xuất |
+
+Hình 10 – Mã QR Expo Go để chạy app trên điện thoại thật (Expo Go trỏ về Metro bundler trên máy tính):
+
+![Mã QR Expo Go để cài app React Native lên điện thoại](anh/expo-go-qr.png)
+
+Hình 11 – Tab "Lịch sử" của dashboard cloud hiển thị bảng hóa đơn tính phí và lịch sử đặt chỗ:
+
+![Tab Lịch sử trên dashboard cloud với bảng hóa đơn tính phí và lịch sử đặt chỗ](anh/cloud-lichsu.png)
+
+Hình 12 – Cơ chế chống trùng đặt chỗ: ô đã có người đặt trước sẽ bị từ chối kèm thông báo rõ ràng:
+
+![Dashboard cloud báo ô đã được đặt bởi người khác - cơ chế chống trùng đặt chỗ](anh/cloud-lichsu-chongtrung.png)
+
+Hình 13 – Tab "Người dùng" quản lý tài khoản kèm số lượt xe và chi tiêu:
+
+![Tab Người dùng trên dashboard cloud](anh/cloud-nguoidung.png)
 
 ### 7.3 Xử lý lỗi & ổn định
 - **Chống trùng bằng `requestId`**: App gửi `booking/<ID>/set` kèm `requestId`; chỉ khi nhận `booking/<ID>/state` có **cùng `requestId`** mới coi là thành công. Request đến trễ sẽ bị bỏ qua.

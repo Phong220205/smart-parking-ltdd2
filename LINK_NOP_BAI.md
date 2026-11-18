@@ -4,7 +4,7 @@
 |---|---|---|---|
 | 1 | Link Github Project | https://github.com/Phong220205/smart-parking-ltdd2 | ✅ có (CI badge xanh: 39/39 PASS) |
 | 2 | Link github source Arduino | https://github.com/Phong220205/smart-parking-ltdd2/blob/master/esp32/parking_firmware.ino | ✅ có |
-| 3 | Link Wokwi | https://wokwi.com/projects/480840614046528513 | ⚠️ **CẦN CẬP NHẬT** — firmware trên link là bản 16/11 (dùng `WebSocketStreamClient`), **Build failed** vì thiếu thư viện. Phải nạp lại firmware mới (xem mục "Cập nhật link Wokwi" bên dưới) |
+| 3 | Link Wokwi | https://wokwi.com/projects/481021450080913409 | ⚠️ **CẦN CẬP NHẬT** — firmware trên link là bản 16/11 (dùng `WebSocketStreamClient`), **Build failed** vì thiếu thư viện. Phải nạp lại firmware mới (xem mục "Cập nhật link Wokwi" bên dưới) |
 | 4 | Link source code Backend | https://github.com/Phong220205/smart-parking-ltdd2/tree/master/backend | ✅ có |
 | 5 | **Link Server cloud** | **https://smart-parking-ltdd2.onrender.com** | ✅ **ĐÃ DEPLOY THẬT** (Render free, HTTPS, MQTT-WS bridge `/mqtt`) |
 | 6 | Link Source Code App | https://github.com/Phong220205/smart-parking-ltdd2/tree/master/app | ✅ có |
