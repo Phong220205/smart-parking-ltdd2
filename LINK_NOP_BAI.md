@@ -4,7 +4,7 @@
 |---|---|---|---|
 | 1 | Link Github Project | https://github.com/Phong220205/smart-parking-ltdd2 | ✅ có (CI badge xanh: 39/39 PASS) |
 | 2 | Link github source Arduino | https://github.com/Phong220205/smart-parking-ltdd2/blob/master/esp32/parking_firmware.ino | ✅ có |
-| 3 | Link Wokwi | https://wokwi.com/projects/480840614046528513 | ✅ có (firmware V2 + debounce đã nạp, build OK) |
+| 3 | Link Wokwi | https://wokwi.com/projects/480840614046528513 | ⚠️ **CẦN CẬP NHẬT** — firmware trên link là bản 16/11 (dùng `WebSocketStreamClient`), **Build failed** vì thiếu thư viện. Phải nạp lại firmware mới (xem mục "Cập nhật link Wokwi" bên dưới) |
 | 4 | Link source code Backend | https://github.com/Phong220205/smart-parking-ltdd2/tree/master/backend | ✅ có |
 | 5 | **Link Server cloud** | **https://smart-parking-ltdd2.onrender.com** | ✅ **ĐÃ DEPLOY THẬT** (Render free, HTTPS, MQTT-WS bridge `/mqtt`) |
 | 6 | Link Source Code App | https://github.com/Phong220205/smart-parking-ltdd2/tree/master/app | ✅ có |
@@ -109,3 +109,44 @@ App → Broker → Server trên cloud** — tính năng quan trọng nhất củ
 bridge 2 chiều PASS trên cloud · simulator nối cloud → `online:true` ·
 **CI GitHub Actions xanh**: 39/39 PASS + TLS 5/5 PASS.
 Chi tiết: `docs/KET_QUA_TEST.md` mục 10 & 13.
+
+---
+
+## ⚠️ Cập nhật link Wokwi (ô #3) — bắt buộc trước khi nộp
+
+**Vấn đề**: link Wokwi `https://wokwi.com/projects/480840614046528513` đang trỏ tới
+firmware bản **16/11** — bản dùng thư viện `WebSocketStreamClient` (areve).
+Thư viện đó viết cho Arduino core 2.x, **không biên dịch được trên core 3.x**
+(lỗi: *"cannot declare variable ... to be of abstract type"*) → Wokwi báo
+**"Build failed!"** và project không chạy được.
+
+**Nguyên nhân gốc đã được xử lý trong repo** (commit `dbe9dbe`): viết lớp
+`MqttWsClient` tự viết theo chuẩn RFC 6455 → bỏ hẳn thư viện lỗi, chỉ còn
+6 thư viện có sẵn trong `libraries.txt` → **build được**.
+
+**Cách cập nhật** (cần đăng nhập Wokwi — 5 phút):
+
+1. Vào https://wokwi.com/projects/480840614046528513 → bấm **Sign in** (góc trên phải)
+2. Tab **Code** → chọn file **`sketch.ino`**
+3. Xoá hết nội dung cũ → dán toàn bộ nội dung file
+   `esp32/sketch.ino` (đã tạo sẵn, 62 KB / 1326 dòng — trùng `parking_firmware.ino`)
+4. Bấm **Save**
+5. Kiểm tra tab `libraries.txt` và `diagram.json` — **giữ nguyên** (đã khớp repo)
+6. Tab **Simulation** → **Start the simulation** → phải hiện OLED 6 dòng +
+   Serial log `[MQTT] OK -> smart-parking-ltdd2.onrender.com`
+7. Bấm **Share** → chắc chắn quyền **"Anyone with the link"** (không cần đăng nhập
+   khi GV mở link)
+
+> **Nếu thay firmware mà vẫn lỗi build**: kiểm tra `libraries.txt` phải có đúng 6 dòng:
+> `PubSubClient`, `ArduinoJson`, `ESP32Servo`, `MFRC522`, `Adafruit SSD1306`,
+> `Adafruit GFX Library` — **KHÔNG** thêm `arduinoWebSockets`/`WebSocketStreamClient`.
+
+### Thay thế nếu không cập nhật được Wokwi
+
+Firmware trong repo (`esp32/`) là bản **đúng và đã build OK** ở link GitHub
+(ô #2). Nếu GV chỉ cần xem firmware + mô phỏng, có thể:
+- Dùng **Wokwi for VS Code** (mở thư mục `esp32/` → Start Simulation) — tự đồng bộ từ GitHub
+- Hoặc demo bằng **simulator Python** (đang chạy được, thay đúng vai trò ESP32):
+  ```powershell
+  python simulator/parking_simulator.py --mode demo --ws wss://smart-parking-ltdd2.onrender.com/mqtt --user esp32 --password esp32123
+  ```
