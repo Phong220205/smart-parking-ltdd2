@@ -135,17 +135,38 @@ export function connectParking(cfg, onEvent) {
   if (direct) {
     if (cfg.brokerTls) {
       opts.rejectUnauthorized = cfg.rejectUnauthorized !== false;
+      // mqtt dua cac option TLS nay vao wsOptions khi noi wss://
+      opts.wsOptions = { rejectUnauthorized: cfg.rejectUnauthorized !== false };
     }
   }
-  // Parse URL thu cong va truyenn OBJECT vao mqtt.connect().
-  // Ly do: xem parseWsUrl() - module 'url' cua RN khong co static .parse()
-  // ma mqtt v5 phai dung de tach hostname/port/path tu URL string.
+  // Parse URL thu cong va GOP TAT CA VAO MOT OBJECT DUY NHAT roi truyen
+  // vao mqtt.connect(target) - KHONG truyen tham so thu hai.
+  //
+  // LY DO quan trong (mqtt v5, build/lib/connect/index.js):
+  //   if (typeof brokerUrl === 'object' && !opts) { opts = brokerUrl; brokerUrl = ''; }
+  //   => Neu truyen 2 tham so (obj, opts) thi object bi BO QUA hoan toan,
+  //      opts moi duoc dung, va opts cua ta KHONG co hostname =>
+  //      mqtt fallback sang document.URL (RN khong co DOM) =>
+  //      throw "Could not determine host. Specify host manually."
+  // Chi khi truyen MOT object duy nhất thi mqtt moi lay hostname tu no.
+  //
+  // Them 'host' (mqtt dung opts.host fallback khi hostname rong) va
+  // 'wsOptions' cho TLS - de an toan cho ca hai mode.
   const parsed = parseWsUrl(url);
-  const target = parsed
-    ? { protocol: parsed.protocol, hostname: parsed.hostname, port: parsed.port, path: parsed.path }
-    : url;
+  const target = {
+    ...opts,
+    ...(parsed
+      ? {
+          protocol: parsed.protocol,
+          hostname: parsed.hostname,
+          host: parsed.hostname,
+          port: parsed.port,
+          path: parsed.path,
+        }
+      : {}),
+  };
 
-  const client = mqtt.connect(target, opts);
+  const client = mqtt.connect(target);
   client.on('connect', () => {
     onEvent('conn', true);
     client.subscribe([
