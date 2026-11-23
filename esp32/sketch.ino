@@ -1437,6 +1437,13 @@ void loop() {
     //   okPub=true  -> đã gửi, broker sẽ nhận (lỗi nằm ở tầng broker/ACL)
     Serial.printf("[MQTT] Heartbeat #%lu gui=%s (state=%d)\n",
                    lastBeat / 8000, okPub ? "OK" : "LOI", mqtt.state());
+    // [FIX] Phat lai "parking/system/status" (retain) moi vong 8s.
+    //   Ly do: giua cac lan publish, Server (Backend) co the KHOI DONG LAI
+    //   (Render free tier restart container). Server moi se khong nhan duoc
+    //   retained "system/status" da publish tu truoc -> /api/health bao
+    //   online:false va dashboard hien banner OFFLINE du ESP32 van online.
+    //   Phat lai dinh ky -> Server nao cung nhan dung trong toi da 8s.
+    mqtt.publish("parking/system/status", "{\"online\":true}", true);
   }
 
   // --- Snapshot định kỳ (mỗi 30 giây) ---
