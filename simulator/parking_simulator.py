@@ -300,6 +300,16 @@ def beat_loop():
             "revenue": revenue, "firmware": "3.0-sim",
             "clockOK": True, "clock": clock(),
             "wdt": True}), qos=0)
+        # [FIX] Publish lai "system/status" (retain) moi vong 15s.
+        #   Ly do: giua cac lan publish, Backend co the KHOI DONG LAI (Render free
+        #   tier restart container). Backend moi se khong nhan duoc retained
+        #   "system/status" da publish tu truoc -> /api/health bao online:false
+        #   va dashboard hien banner OFFLINE du thiet bi van online.
+        #   Giai phap: phat lai status dinh ky -> backend nao cung nhan dung
+        #   trong toi da 15s. Day cung la hanh vi dung cua firmware ESP32 that
+        #   (publish status lap lai theo chu ky, khong chi 1 lan luc ket noi).
+        client.publish("parking/system/status", json.dumps({
+            "online": True, "ts": int(time.time() * 1000)}), qos=1, retain=True)
 
 
 # ------------------------------- MAIN ----------------------------------------
