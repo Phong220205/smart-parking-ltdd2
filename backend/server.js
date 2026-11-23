@@ -628,8 +628,43 @@ app.get("/api/version", (req, res) => res.json({
   ts: now(),
 }));
 
+// GET /api -> danh sach endpoint (giup GV/nguoi danh dung tra cuu nhanh)
+app.get("/api", (req, res) => res.json({
+  ok: true,
+  name: "Smart Parking REST API",
+  version: "2.0",
+  docs: "README.md",
+  endpoints: [
+    { method: "GET", path: "/api/health", desc: "Kiem tra suc khoe (MQTT, so slot)" },
+    { method: "GET", path: "/api/health/deep", desc: "Chuan doan sau: uptime, node, bo nho, du lieu" },
+    { method: "GET", path: "/api/status", desc: "Toan bo trang thai 6 ot + gate + doanh thu" },
+    { method: "GET", path: "/api/slots", desc: "Chi danh sach trang thai 6 ot" },
+    { method: "GET", path: "/api/receipts?limit=50", desc: "Lich su hoa don tinh phi" },
+    { method: "GET", path: "/api/bookings?limit=50", desc: "Lich su dat cho" },
+    { method: "GET", path: "/api/rfid", desc: "Nhat ky quet the RFID" },
+    { method: "GET", path: "/api/events", desc: "Nhat ky su kien he thong" },
+    { method: "GET", path: "/api/stats", desc: "Thong ke doanh thu 7 ngay / theo gio / top user" },
+    { method: "GET", path: "/api/bridge", desc: "Trang thai MQTT-over-WebSocket bridge" },
+    { method: "GET", path: "/api/broker/auth-log", desc: "Nhat ky xac thuc broker (minh chung Lab 2)" },
+    { method: "GET", path: "/api/version", desc: "Phien ban dang chay (ma commit deploy)" },
+    { method: "GET", path: "/api/stream", desc: "SSE realtime (text/event-stream)" },
+    { method: "POST", path: "/api/booking", desc: "Dat cho: {slot,user,action}" },
+    { method: "POST", path: "/api/gate", desc: "Dieu khien barrier: {action:OPEN|CLOSE}" },
+    { method: "POST", path: "/api/auth/register", desc: "Dang ky tai khoan" },
+    { method: "POST", path: "/api/auth/login", desc: "Dang nhap (tra ve JWT)" },
+    { method: "GET", path: "/api/auth/me", desc: "Thong tin tai khoan (can Bearer token)" },
+    { method: "GET", path: "/api/users", desc: "Danh sach nguoi dung" },
+    { method: "POST", path: "/api/logout", desc: "Dang xuat" },
+  ],
+  web: { dashboard: "/", note: "Mo duong dan goc de xem Web Dashboard 5 tab" },
+}));
+
 // 404 JSON cho API
-app.use("/api", (req, res) => res.status(404).json({ ok: false, error: "Khong tim thay endpoint" }));
+app.use("/api", (req, res) => res.status(404).json({
+  ok: false,
+  error: "Khong tim thay endpoint",
+  hint: "Xem danh sach tai GET /api",
+}));
 
 // Error handler toan cuc
 app.use((err, req, res, next) => {
