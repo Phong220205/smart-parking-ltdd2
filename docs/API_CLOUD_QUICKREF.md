@@ -63,6 +63,8 @@ Link gốc `/` **KHÔNG phải** REST API — nó là **Web Dashboard** (giao di
 | Method | Đường dẫn | Body | Mô tả |
 |---|---|---|---|
 | POST | `/api/booking` | `{"slot":"P1","user":"SV01","action":"reserve"}` | Đặt / huỷ chỗ |
+| POST | `/api/enter` | `{"slot":"P1","user":"SV01"}` | Xe vào ô |
+| POST | `/api/exit` | `{"slot":"P1"}` | Xe ra ô |
 | POST | `/api/gate` | `{"action":"OPEN"}` | Mở / đóng barrier |
 
 ### Tài khoản
@@ -73,6 +75,7 @@ Link gốc `/` **KHÔNG phải** REST API — nó là **Web Dashboard** (giao di
 | POST | `/api/auth/login` | Đăng nhập → trả **JWT** |
 | GET | `/api/auth/me` | Thông tin tài khoản (cần `Authorization: Bearer <token>`) |
 | GET | `/api/users` | Danh sách người dùng |
+| POST | `/api/balance` | Nạp tiền vào ví (cần `Authorization: Bearer <token>`) |
 | POST | `/api/logout` | Đăng xuất |
 
 ---
